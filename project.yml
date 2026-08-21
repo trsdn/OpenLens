@@ -1,0 +1,86 @@
+name: OpenLens
+options:
+  bundleIdPrefix: com.trsdn
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  minimumXcodeGenVersion: "2.40.0"
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: G69Z5BNY97
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    SWIFT_STRICT_CONCURRENCY: minimal
+    DEAD_CODE_STRIPPING: YES
+    ALWAYS_SEARCH_USER_PATHS: NO
+    CLANG_ENABLE_OBJC_ARC: YES
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+targets:
+  OpenLens:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/OpenLens
+      - path: Sources/OpenLensShared
+    dependencies:
+      - target: OpenLensCamera
+        embed: true
+        codeSign: true
+        copy:
+          destination: productsDirectory
+          subpath: "$(CONTENTS_FOLDER_PATH)/Library/SystemExtensions"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.trsdn.openlens
+        PRODUCT_NAME: OpenLens
+        INFOPLIST_FILE: Sources/OpenLens/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/OpenLens/OpenLens.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: YES
+        COMBINE_HIDPI_IMAGES: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+
+  OpenLensCamera:
+    type: system-extension
+    platform: macOS
+    sources:
+      - path: Sources/OpenLensCamera
+      - path: Sources/OpenLensShared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.trsdn.openlens.camera
+        PRODUCT_NAME: com.trsdn.openlens.camera
+        INFOPLIST_FILE: Sources/OpenLensCamera/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/OpenLensCamera/OpenLensCamera.entitlements
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks"
+
+  OpenLensTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/OpenLensTests
+      - path: Sources/OpenLensShared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.trsdn.openlens.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+
+schemes:
+  OpenLens:
+    build:
+      targets:
+        OpenLens: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - OpenLensTests

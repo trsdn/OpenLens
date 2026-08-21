@@ -1,0 +1,331 @@
+import AVFoundation
+import Combine
+import Foundation
+import os.log
+
+/// Coordinates capture, rendering, the system extension and persisted scenes.
+///
+/// All published state lives on the main actor; the per-frame work happens in
+/// `FramePipeline`, which this class only configures.
+@MainActor
+final class AppModel: ObservableObject {
+    @Published private(set) var devices: [CaptureDeviceInfo] = []
+    @Published private(set) var cameraAuthorized = false
+    @Published var errorMessage: String?
+    @Published private(set) var effectiveZoom: CGFloat = 1
+    @Published private(set) var losslessZoomLimit: CGFloat = 1
+    @Published private(set) var isReceivingFrames = false
+    @Published private(set) var previewVisible = true
+
+    let scenes = SceneStore()
+    let installer = SystemExtensionInstaller()
+    let extensionClient = ExtensionClient()
+
+    private let capture = CaptureEngine()
+    private var pipeline: FramePipeline?
+    private let log = Logger(subsystem: OpenLensID.appBundleID, category: "model")
+    private var cancellables = Set<AnyCancellable>()
+    private var lastFrameActivity = Date.distantPast
+    private var healthTimer: Timer?
+
+    var isReady: Bool { pipeline != nil }
+
+    init() {
+        do {
+            let renderer = try VideoRenderer()
+            let pipeline = FramePipeline(renderer: renderer, extensionClient: extensionClient)
+            pipeline.onFrameActivity = { [weak self] in
+                Task { @MainActor in self?.noteFrameActivity() }
+            }
+            pipeline.onCaptureError = { [weak self] error in
+                Task { @MainActor in self?.errorMessage = error.errorDescription }
+            }
+            capture.delegate = pipeline
+            self.pipeline = pipeline
+        } catch {
+            errorMessage = "Metal is unavailable: \(error.localizedDescription)"
+        }
+
+        extensionClient.$isStreaming
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.reconcilePipeline() }
+            .store(in: &cancellables)
+
+        scenes.$selectedSceneID
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.applySelectedScene(animated: true) }
+            .store(in: &cancellables)
+
+        NotificationCenter.default
+            .publisher(for: AVCaptureDevice.wasConnectedNotification)
+            .merge(with: NotificationCenter.default.publisher(
+                for: AVCaptureDevice.wasDisconnectedNotification
+            ))
+            .sink { [weak self] _ in self?.refreshDevices() }
+            .store(in: &cancellables)
+
+        healthTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.updateFrameHealth() }
+        }
+    }
+
+    // MARK: - Lifecycle
+
+    func start() async {
+        cameraAuthorized = await CaptureEngine.requestAccess()
+        if !cameraAuthorized {
+            errorMessage = CaptureError.permissionDenied.errorDescription
+        }
+        refreshDevices()
+        installer.activate()
+        extensionClient.connect()
+        reloadOverlay()
+
+        if scenes.scenes.isEmpty, let first = devices.first {
+            scenes.addScene(device: first)
+        }
+        applySelectedScene(animated: false)
+        reconcilePipeline()
+    }
+
+    func shutdown() {
+        capture.stop()
+        extensionClient.shutdown()
+        healthTimer?.invalidate()
+    }
+
+    func refreshDevices() {
+        // Never offer our own virtual camera as a source: selecting it would feed
+        // the extension's output straight back into its input.
+        devices = CaptureEngine.availableDevices().filter {
+            $0.name != OpenLensID.deviceName
+                && !$0.id.contains(OpenLensID.deviceUUID.uuidString)
+        }
+    }
+
+    // MARK: - Preview
+
+    func attachPreview(_ target: PreviewRenderTarget) {
+        pipeline?.setPreviewTarget(target)
+    }
+
+    func detachPreview() {
+        pipeline?.setPreviewTarget(nil)
+    }
+
+    func setPreviewVisible(_ visible: Bool) {
+        previewVisible = visible
+        pipeline?.update { $0.wantsPreview = visible }
+        reconcilePipeline()
+    }
+
+    // MARK: - Scenes
+
+    private func applySelectedScene(animated: Bool) {
+        guard let scene = scenes.selectedScene else {
+            capture.stop()
+            return
+        }
+        let switchingCamera = capture.currentDeviceID != scene.deviceID
+        pipeline?.update {
+            $0.target = scene.crop
+            $0.mirror = scene.mirrored
+            $0.overlayEnabled = scene.overlayEnabled
+            $0.overlayRect = scene.overlayRect
+            $0.overlayOpacity = scene.overlayOpacity
+        }
+        // Gliding a crop across a camera change looks like a glitch, so only
+        // scenes on the same camera animate.
+        if !animated || switchingCamera {
+            pipeline?.snapCrop(to: scene.crop)
+        }
+        capture.start(deviceID: scene.deviceID, quality: scene.quality)
+        updateZoomReadout()
+    }
+
+    func selectScene(at index: Int) {
+        scenes.selectScene(at: index)
+    }
+
+    func select(_ scene: CameraScene) {
+        scenes.select(scene)
+    }
+
+    func addScene() {
+        guard let device = devices.first else { return }
+        scenes.addScene(device: device)
+        applySelectedScene(animated: false)
+    }
+
+    func duplicateSelectedScene() {
+        scenes.duplicateSelected()
+    }
+
+    func removeSelectedScene() {
+        guard let scene = scenes.selectedScene else { return }
+        scenes.remove(scene)
+        applySelectedScene(animated: false)
+    }
+
+    func renameSelectedScene(_ name: String) {
+        scenes.mutateSelected { $0.name = name }
+        scenes.save()
+    }
+
+    func setDevice(_ device: CaptureDeviceInfo) {
+        scenes.mutateSelected {
+            $0.deviceID = device.id
+            $0.deviceName = device.name
+        }
+        scenes.save()
+        capture.stop()
+        applySelectedScene(animated: false)
+    }
+
+    func setQuality(_ quality: CaptureQuality) {
+        scenes.mutateSelected { $0.quality = quality }
+        scenes.save()
+        capture.stop()
+        applySelectedScene(animated: false)
+    }
+
+    func setMirrored(_ mirrored: Bool) {
+        scenes.mutateSelected { $0.mirrored = mirrored }
+        scenes.save()
+        pipeline?.update { $0.mirror = mirrored }
+    }
+
+    // MARK: - Zoom
+
+    func zoom(to zoom: CGFloat, anchor: CGPoint) {
+        guard let settings = pipeline?.currentSettings() else { return }
+        commitCrop(
+            CropGeometry.zooming(
+                settings.target,
+                to: zoom,
+                anchor: anchor,
+                sourceAspect: settings.sourceAspect,
+                outputAspect: CGFloat(OpenLensOutput.aspectRatio)
+            )
+        )
+    }
+
+    func zoomBy(factor: CGFloat, anchor: CGPoint) {
+        guard let settings = pipeline?.currentSettings() else { return }
+        zoom(to: settings.target.zoom * factor, anchor: anchor)
+    }
+
+    /// `delta` is in normalized source units.
+    func pan(by delta: CGSize) {
+        guard let settings = pipeline?.currentSettings() else { return }
+        commitCrop(
+            CropGeometry.panning(
+                settings.target,
+                by: delta,
+                sourceAspect: settings.sourceAspect,
+                outputAspect: CGFloat(OpenLensOutput.aspectRatio)
+            )
+        )
+    }
+
+    func resetZoom() {
+        commitCrop(.identity)
+        persistCrop()
+    }
+
+    /// Called when a gesture ends, so a continuous drag does not hit
+    /// `UserDefaults` on every frame.
+    func persistCrop() {
+        scenes.save()
+    }
+
+    var currentCropRect: CGRect {
+        guard let settings = pipeline?.currentSettings() else { return CGRect(x: 0, y: 0, width: 1, height: 1) }
+        return CropGeometry.rect(
+            for: settings.target,
+            sourceAspect: settings.sourceAspect,
+            outputAspect: CGFloat(OpenLensOutput.aspectRatio)
+        )
+    }
+
+    private func commitCrop(_ state: CropState) {
+        pipeline?.update { $0.target = state }
+        scenes.mutateSelected { $0.crop = state }
+        updateZoomReadout()
+    }
+
+    private func updateZoomReadout() {
+        effectiveZoom = pipeline?.currentSettings().target.zoom ?? 1
+        losslessZoomLimit = CropGeometry.losslessZoomLimit(
+            sourcePixelSize: capture.sourcePixelSize,
+            outputPixelSize: CGSize(width: OpenLensOutput.width, height: OpenLensOutput.height)
+        )
+    }
+
+    // MARK: - Overlay
+
+    func chooseOverlay(url: URL?) {
+        scenes.setOverlay(url: url)
+        reloadOverlay()
+    }
+
+    func setOverlayEnabled(_ enabled: Bool) {
+        scenes.mutateSelected { $0.overlayEnabled = enabled }
+        scenes.save()
+        pipeline?.update { $0.overlayEnabled = enabled }
+    }
+
+    func setOverlayRect(_ rect: CGRect) {
+        scenes.mutateSelected { $0.overlayRect = rect }
+        pipeline?.update { $0.overlayRect = rect }
+    }
+
+    func setOverlayOpacity(_ opacity: Double) {
+        scenes.mutateSelected { $0.overlayOpacity = opacity }
+        pipeline?.update { $0.overlayOpacity = opacity }
+    }
+
+    private func reloadOverlay() {
+        guard let pipeline else { return }
+        guard let url = scenes.overlayURL else {
+            pipeline.setOverlay(nil)
+            return
+        }
+        do {
+            try pipeline.loadOverlay(
+                url: url,
+                rect: scenes.selectedScene?.overlayRect ?? .zero,
+                opacity: scenes.selectedScene?.overlayOpacity ?? 1
+            )
+        } catch {
+            errorMessage = "Could not load the overlay image."
+        }
+    }
+
+    // MARK: - Gating
+
+    /// The capture session only runs when someone will actually see the result:
+    /// either a conferencing app has the virtual camera open, or our window is
+    /// on screen. Idle cost is then genuinely zero.
+    private func reconcilePipeline() {
+        let streaming = extensionClient.isStreaming
+        pipeline?.update { $0.wantsOutput = streaming }
+
+        if streaming || previewVisible {
+            if let scene = scenes.selectedScene {
+                capture.start(deviceID: scene.deviceID, quality: scene.quality)
+            }
+        } else {
+            capture.stop()
+        }
+    }
+
+    private func noteFrameActivity() {
+        lastFrameActivity = Date()
+        if !isReceivingFrames { isReceivingFrames = true }
+    }
+
+    private func updateFrameHealth() {
+        isReceivingFrames = Date().timeIntervalSince(lastFrameActivity) < 2.5
+    }
+}
