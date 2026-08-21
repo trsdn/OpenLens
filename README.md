@@ -15,8 +15,10 @@ not touch audio, and has no timeline, no projects and no accounts.
 ## What it does
 
 - **Zoom and pan into any area of the frame.** Scroll or pinch over the preview
-  to zoom around the cursor, drag to pan, double-click to reset. The crop is a
-  texture-coordinate remap inside a single Metal pass, so it costs nothing.
+  to zoom around the cursor, drag to pan, double-click to reset. There is also a
+  zoom slider in the inspector and **⌘+ / ⌘− / ⌘0** if you would rather not aim
+  with the mouse. The crop is a texture-coordinate remap inside a single Metal
+  pass, so it costs nothing.
 - **Lossless zoom.** Capture at the camera's native resolution and output 1080p,
   and the picture stays pixel-perfect up to the point where the crop would start
   upscaling. The badge tells you where that limit is.
@@ -24,9 +26,12 @@ not touch audio, and has no timeline, no projects and no accounts.
   between them with **⌥1…⌥9** — system-wide, so it works while you are in a call.
 - **PNG overlay with alpha,** placed on a nine-position grid with an opacity
   slider and composited in the same GPU pass.
-- **Cheap.** Around 4 % of a single core (roughly 0.3 % of an M4 Pro) at 1080p30
-  with the preview visible, and the preview stops rendering entirely when the
-  window is hidden.
+- **Cheap.** Around 17 % of a single core — roughly 1.4 % of an M4 Pro — at
+  1080p30 while a conferencing app is actually pulling frames. The capture
+  session does not run at all when nobody is looking, and the preview pass is
+  skipped when the window is hidden or the preview is switched off (**⌘P**),
+  though on Apple silicon that pass is nearly free, so expect a fraction of a
+  percent rather than a dramatic saving.
 
 ## How it works
 

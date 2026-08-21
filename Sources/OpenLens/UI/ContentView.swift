@@ -23,8 +23,12 @@ struct ContentView: View {
 
     private var previewArea: some View {
         ZStack(alignment: .bottomLeading) {
-            PreviewView(model: model)
-                .background(.black)
+            if model.previewEnabled {
+                PreviewView(model: model)
+                    .background(.black)
+            } else {
+                PreviewOffPlaceholder(model: model)
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 if let message = model.errorMessage {
@@ -60,6 +64,33 @@ struct ContentView: View {
 
 /// Mirrors Detail's little zoom pill, plus a warning once the crop starts
 /// upscaling — which is the moment picture quality actually degrades.
+/// Shown instead of the live preview when it is switched off.
+///
+/// The virtual camera keeps running — only the on-screen copy stops, which is
+/// the point: during a long call the preview is the only part of the pipeline
+/// nobody is looking at.
+struct PreviewOffPlaceholder: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        ZStack {
+            Color.black
+            VStack(spacing: 12) {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.secondary)
+                Text("Preview off")
+                    .font(.headline)
+                Text("The virtual camera keeps running.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Show preview") { model.previewEnabled = true }
+                    .keyboardShortcut("p", modifiers: .command)
+            }
+        }
+    }
+}
+
 struct ZoomBadge: View {
     @ObservedObject var model: AppModel
 

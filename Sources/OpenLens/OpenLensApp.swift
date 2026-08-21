@@ -32,8 +32,17 @@ struct OpenLensApp: App {
                     .keyboardShortcut("d", modifiers: .command)
                 Button("Delete Scene") { model.removeSelectedScene() }
                 Divider()
+                Button("Zoom In") { model.zoomIn() }
+                    .keyboardShortcut("+", modifiers: .command)
+                Button("Zoom Out") { model.zoomOut() }
+                    .keyboardShortcut("-", modifiers: .command)
                 Button("Reset Zoom") { model.resetZoom() }
                     .keyboardShortcut("0", modifiers: .command)
+            }
+
+            CommandMenu("View") {
+                Toggle("Show Preview", isOn: $model.previewEnabled)
+                    .keyboardShortcut("p", modifiers: .command)
             }
 
             CommandGroup(after: .appInfo) {

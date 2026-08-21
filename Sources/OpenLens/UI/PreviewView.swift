@@ -134,14 +134,20 @@ final class MetalPreviewView: NSView {
     }
 
     override func scrollWheel(with event: NSEvent) {
+        // Momentum events keep arriving for a second after the fingers lift. Zooming
+        // through them overshoots wildly and feels like the app is running away, so
+        // only the part of the gesture the hand is actually driving counts.
+        guard event.momentumPhase == [] else { return }
         guard let model, let anchor = sourceCoordinate(for: convert(event.locationInWindow, from: nil))
         else { return super.scrollWheel(with: event) }
         // Trackpads report small continuous deltas, mice report coarse steps;
-        // exponentiating keeps both feeling like the same gesture.
-        let step = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY * 0.004
-            : event.scrollingDeltaY * 0.05
+        // exponentiating keeps both feeling like the same gesture. The gains are
+        // tuned so that one comfortable two-finger swipe, or four wheel clicks,
+        // is roughly a doubling — anything gentler reads as "the zoom is broken".
+        let step = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY * 0.006
+            : event.scrollingDeltaY * 0.15
         model.zoomBy(factor: exp(step), anchor: anchor)
-        model.persistCrop()
+        model.schedulePersist()
     }
 
     override func magnify(with event: NSEvent) {

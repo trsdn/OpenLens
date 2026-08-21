@@ -37,6 +37,32 @@ struct InspectorView: View {
             }
 
             Section("Zoom") {
+                // The scroll gesture over the preview is the fast path, but it is
+                // invisible: without a control here the feature looks missing.
+                HStack(spacing: 8) {
+                    Button {
+                        model.zoomOut()
+                    } label: {
+                        Image(systemName: "minus.magnifyingglass")
+                    }
+                    .disabled(model.effectiveZoom <= CropGeometry.minZoom + 0.001)
+
+                    Slider(
+                        value: Binding(
+                            get: { model.effectiveZoom },
+                            set: { model.setZoom($0) }
+                        ),
+                        in: CropGeometry.minZoom...CropGeometry.maxZoom
+                    )
+
+                    Button {
+                        model.zoomIn()
+                    } label: {
+                        Image(systemName: "plus.magnifyingglass")
+                    }
+                    .disabled(model.effectiveZoom >= CropGeometry.maxZoom - 0.001)
+                }
+
                 LabeledContent("Level") {
                     Text(String(format: "%.2f×", model.effectiveZoom)).monospacedDigit()
                 }
@@ -44,9 +70,22 @@ struct InspectorView: View {
                     Text(String(format: "%.2f×", model.losslessZoomLimit)).monospacedDigit()
                 }
                 Button("Reset to full frame") { model.resetZoom() }
-                Text("Scroll or pinch over the preview to zoom, drag to pan, double-click to reset.")
+                Text(
+                    "Scroll or pinch over the preview to zoom around the pointer, drag to pan, "
+                        + "double-click to reset. ⌘+ and ⌘- work anywhere in the app."
+                )
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Preview") {
+                Toggle("Show preview", isOn: $model.previewEnabled)
+                Text(
+                    "Turning the preview off skips one render pass per frame. The virtual "
+                        + "camera is unaffected."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Section("Overlay") {

@@ -16,6 +16,18 @@ final class AppModel: ObservableObject {
     @Published private(set) var losslessZoomLimit: CGFloat = 1
     @Published private(set) var isReceivingFrames = false
     @Published private(set) var previewVisible = true
+    /// User-facing switch, independent of whether the window happens to be
+    /// visible. Turning the preview off skips a whole render pass per frame, and
+    /// when nothing is streaming either it stops the capture session outright.
+    @Published var previewEnabled = true {
+        didSet {
+            guard previewEnabled != oldValue else { return }
+            UserDefaults.standard.set(previewEnabled, forKey: Self.previewEnabledKey)
+            applyPreviewState()
+        }
+    }
+
+    private static let previewEnabledKey = "preview.enabled.v1"
 
     let scenes = SceneStore()
     let installer = SystemExtensionInstaller()
@@ -32,10 +44,14 @@ final class AppModel: ObservableObject {
     /// timers and delay the switch into streaming by several seconds.
     private var activity: NSObjectProtocol?
     private let hotKeys = GlobalHotKeys()
+    private var persistWork: DispatchWorkItem?
 
     var isReady: Bool { pipeline != nil }
 
     init() {
+        if UserDefaults.standard.object(forKey: Self.previewEnabledKey) != nil {
+            previewEnabled = UserDefaults.standard.bool(forKey: Self.previewEnabledKey)
+        }
         do {
             let renderer = try VideoRenderer()
             let pipeline = FramePipeline(renderer: renderer, extensionClient: extensionClient)
@@ -134,7 +150,14 @@ final class AppModel: ObservableObject {
 
     func setPreviewVisible(_ visible: Bool) {
         previewVisible = visible
-        pipeline?.update { $0.wantsPreview = visible }
+        applyPreviewState()
+    }
+
+    /// The preview only renders when the user wants it *and* the window is
+    /// actually on screen.
+    private func applyPreviewState() {
+        let wants = previewEnabled && previewVisible
+        pipeline?.update { $0.wantsPreview = wants }
         reconcilePipeline()
     }
 
@@ -247,6 +270,24 @@ final class AppModel: ObservableObject {
         )
     }
 
+    /// Zooms around the middle of the current crop, which is what every explicit
+    /// control (slider, menu item, keyboard) should do — only the scroll wheel
+    /// zooms around the cursor.
+    func setZoom(_ value: CGFloat) {
+        guard let settings = pipeline?.currentSettings() else { return }
+        let rect = CropGeometry.rect(
+            for: settings.target,
+            sourceAspect: settings.sourceAspect,
+            outputAspect: CGFloat(OpenLensOutput.aspectRatio)
+        )
+        zoom(to: value, anchor: CGPoint(x: rect.midX, y: rect.midY))
+        schedulePersist()
+    }
+
+    func zoomIn() { setZoom((pipeline?.currentSettings().target.zoom ?? 1) * 1.25) }
+
+    func zoomOut() { setZoom((pipeline?.currentSettings().target.zoom ?? 1) / 1.25) }
+
     func resetZoom() {
         commitCrop(.identity)
         persistCrop()
@@ -255,7 +296,21 @@ final class AppModel: ObservableObject {
     /// Called when a gesture ends, so a continuous drag does not hit
     /// `UserDefaults` on every frame.
     func persistCrop() {
+        persistWork?.cancel()
+        persistWork = nil
         scenes.save()
+    }
+
+    /// Scroll wheels have no reliable "gesture ended" for every input device, so
+    /// continuous zooming coalesces its writes instead.
+    func schedulePersist() {
+        persistWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.scenes.save()
+            self?.persistWork = nil
+        }
+        persistWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
     var currentCropRect: CGRect {
@@ -333,7 +388,7 @@ final class AppModel: ObservableObject {
         let streaming = streamingOverride ?? extensionClient.isStreaming
         pipeline?.update { $0.wantsOutput = streaming }
 
-        if streaming || previewVisible {
+        if streaming || (previewVisible && previewEnabled) {
             if let scene = scenes.selectedScene {
                 capture.start(deviceID: scene.deviceID, quality: scene.quality)
             }
