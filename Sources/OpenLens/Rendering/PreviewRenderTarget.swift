@@ -62,21 +62,16 @@ final class PreviewRenderTarget: @unchecked Sendable {
     /// puts the preview, which nobody in the call can see, in the way of the
     /// video everybody can. Skipping a preview frame instead costs nothing that
     /// matters: the preview is a monitor, not the product.
+    ///
+    /// The layer lock still covers the call, because `setDrawableSize` runs on
+    /// the main thread. With one drawable of two in flight at most, there is
+    /// always a free one, so it returns without waiting.
     func nextDrawableIfIdle() -> CAMetalDrawable? {
         lock.lock()
-        guard isEnabled, layer.device != nil, inFlight == 0 else {
-            lock.unlock()
-            return nil
-        }
+        defer { lock.unlock() }
+        guard isEnabled, layer.device != nil, inFlight == 0 else { return nil }
+        guard let drawable = layer.nextDrawable() else { return nil }
         inFlight += 1
-        lock.unlock()
-
-        guard let drawable = layer.nextDrawable() else {
-            lock.lock()
-            inFlight -= 1
-            lock.unlock()
-            return nil
-        }
         return drawable
     }
 
