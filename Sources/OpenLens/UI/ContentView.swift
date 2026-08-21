@@ -62,8 +62,6 @@ struct ContentView: View {
     }
 }
 
-/// Mirrors Detail's little zoom pill, plus a warning once the crop starts
-/// upscaling — which is the moment picture quality actually degrades.
 /// Shown instead of the live preview when it is switched off.
 ///
 /// The virtual camera keeps running — only the on-screen copy stops, which is
@@ -91,6 +89,11 @@ struct PreviewOffPlaceholder: View {
     }
 }
 
+/// A status readout, not a second control: while you are dragging in the picture
+/// your eyes are here, not in the inspector.
+///
+/// It says "soft" in words rather than flashing a bare warning triangle, because
+/// a lone `!` tells you something is wrong without telling you what.
 struct ZoomBadge: View {
     @ObservedObject var model: AppModel
 
@@ -104,18 +107,21 @@ struct ZoomBadge: View {
             Text(String(format: "%.1f×", model.effectiveZoom))
                 .monospacedDigit()
             if isUpscaling {
-                Image(systemName: "exclamationmark.triangle.fill")
+                Text("· soft")
                     .foregroundStyle(.orange)
-                    .help(
-                        "Past \(String(format: "%.1f×", model.losslessZoomLimit)) the picture is "
-                            + "upscaled. Raise the capture quality for more lossless zoom."
-                    )
             }
         }
         .font(.system(size: 13, weight: .semibold))
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.ultraThinMaterial, in: Capsule())
+        .help(
+            isUpscaling
+                ? "Past \(String(format: "%.1f×", model.losslessZoomLimit)) the picture is "
+                    + "enlarged rather than cropped, so it gets soft. Raise Capture quality "
+                    + "in the inspector for more sharp zoom."
+                : "Current zoom. Set it in the inspector, or scroll over the picture."
+        )
     }
 }
 

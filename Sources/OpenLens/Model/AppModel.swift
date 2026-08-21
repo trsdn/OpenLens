@@ -284,9 +284,24 @@ final class AppModel: ObservableObject {
         schedulePersist()
     }
 
-    func zoomIn() { setZoom((pipeline?.currentSettings().target.zoom ?? 1) * 1.25) }
+    func zoomIn() { stepZoom(by: 1) }
 
-    func zoomOut() { setZoom((pipeline?.currentSettings().target.zoom ?? 1) / 1.25) }
+    func zoomOut() { stepZoom(by: -1) }
+
+    /// Fixed 0.1 steps, snapped to the 0.1 grid so repeated presses land on round
+    /// numbers even when a scroll gesture left the zoom at, say, 1.37×.
+    private func stepZoom(by direction: CGFloat) {
+        let current = pipeline?.currentSettings().target.zoom ?? 1
+        let index = current / Self.zoomStep
+        // The nudge absorbs binary-float error: 1.2 / 0.1 is 11.999…, which would
+        // otherwise round down to 11 and make "zoom in" a no-op.
+        let rounded = direction > 0
+            ? (index + 1e-6).rounded(.down) + 1
+            : (index - 1e-6).rounded(.up) - 1
+        setZoom(rounded * Self.zoomStep)
+    }
+
+    static let zoomStep: CGFloat = 0.1
 
     func resetZoom() {
         commitCrop(.identity)

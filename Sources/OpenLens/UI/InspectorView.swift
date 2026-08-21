@@ -13,7 +13,7 @@ struct InspectorView: View {
 
     var body: some View {
         Form {
-            Section("Scene") {
+            Section {
                 TextField("Name", text: $sceneName)
                     .onSubmit { model.renameSelectedScene(sceneName) }
 
@@ -23,27 +23,57 @@ struct InspectorView: View {
                     }
                 }
 
-                Picker("Capture quality", selection: qualityBinding) {
-                    ForEach(CaptureQuality.allCases, id: \.self) { quality in
-                        Text(quality.title).tag(quality)
+                HStack(spacing: 4) {
+                    Picker("Capture quality", selection: qualityBinding) {
+                        ForEach(CaptureQuality.allCases, id: \.self) { quality in
+                            Text(quality.title).tag(quality)
+                        }
                     }
+                    InfoButton(
+                        text: "Capturing above 1080p is what buys you sharp zoom: a 4K source "
+                            + "can be cropped to 2× and still fill the 1080p output with real "
+                            + "pixels. It costs a little more CPU, so drop to 1080p if you "
+                            + "never zoom."
+                    )
                 }
-                .help(
-                    "Capturing above 1080p is what makes zooming lossless: a 4K source can be "
-                        + "cropped to 2× with no upscaling."
-                )
 
                 Toggle("Mirror", isOn: mirrorBinding)
+
+                HStack {
+                    Button("Duplicate") { model.duplicateSelectedScene() }
+                    Button("Delete") { model.removeSelectedScene() }
+                        .disabled(scenes.scenes.count <= 1)
+                }
+            } header: {
+                SectionHeader(
+                    "Scene",
+                    info: "Scenes are your presets. Camera, zoom, mirror and overlay are "
+                        + "saved into the selected scene as you change them — there is no "
+                        + "save button. Duplicate takes a snapshot of the current look as a "
+                        + "new scene, and ⌥1…⌥9 switch between them even while you are in a call."
+                )
             }
 
-            Section("Zoom") {
-                // The scroll gesture over the preview is the fast path, but it is
-                // invisible: without a control here the feature looks missing.
+            Section {
+                // One control, one place. The number is editable so an exact value
+                // can be typed; the slider and the buttons move in 0.1 steps.
                 HStack(spacing: 8) {
+                    TextField(
+                        "",
+                        value: Binding(
+                            get: { Double(model.effectiveZoom) },
+                            set: { model.setZoom(CGFloat($0)) }
+                        ),
+                        format: .number.precision(.fractionLength(1))
+                    )
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 46)
+                    Text("×").foregroundStyle(.secondary)
+
                     Button {
                         model.zoomOut()
                     } label: {
-                        Image(systemName: "minus.magnifyingglass")
+                        Image(systemName: "minus")
                     }
                     .disabled(model.effectiveZoom <= CropGeometry.minZoom + 0.001)
 
@@ -52,40 +82,45 @@ struct InspectorView: View {
                             get: { model.effectiveZoom },
                             set: { model.setZoom($0) }
                         ),
-                        in: CropGeometry.minZoom...CropGeometry.maxZoom
+                        in: CropGeometry.minZoom...CropGeometry.maxZoom,
+                        step: AppModel.zoomStep
                     )
 
                     Button {
                         model.zoomIn()
                     } label: {
-                        Image(systemName: "plus.magnifyingglass")
+                        Image(systemName: "plus")
                     }
                     .disabled(model.effectiveZoom >= CropGeometry.maxZoom - 0.001)
                 }
 
-                LabeledContent("Level") {
-                    Text(String(format: "%.2f×", model.effectiveZoom)).monospacedDigit()
-                }
-                LabeledContent("Lossless up to") {
-                    Text(String(format: "%.2f×", model.losslessZoomLimit)).monospacedDigit()
+                LabeledContent("Stays sharp up to") {
+                    Text(String(format: "%.1f×", model.losslessZoomLimit)).monospacedDigit()
                 }
                 Button("Reset to full frame") { model.resetZoom() }
-                Text(
-                    "Scroll or pinch over the preview to zoom around the pointer, drag to pan, "
-                        + "double-click to reset. ⌘+ and ⌘- work anywhere in the app."
+            } header: {
+                SectionHeader(
+                    "Zoom",
+                    info: "The slider and the -/+ buttons move in steps of 0.1×. Type in the "
+                        + "field for an exact value, or scroll and pinch over the picture for "
+                        + "continuous zoom around the pointer — dragging then pans.\n\n"
+                        + "\"Stays sharp up to\" is the point where the crop has used up every "
+                        + "real pixel the camera delivers. Beyond it the picture is enlarged "
+                        + "rather than cropped and turns soft, which the badge on the picture "
+                        + "calls out. Raising Capture quality pushes that limit further out."
                 )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
-            Section("Preview") {
+            Section {
                 Toggle("Show preview", isOn: $model.previewEnabled)
-                Text(
-                    "Turning the preview off skips one render pass per frame. The virtual "
-                        + "camera is unaffected."
+            } header: {
+                SectionHeader(
+                    "Preview",
+                    info: "Turning the preview off skips one render pass per frame and frees "
+                        + "the window. The virtual camera is unaffected. On Apple silicon the "
+                        + "saving is well under a percent, so treat this as a way to clear "
+                        + "the screen rather than a performance fix."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
 
             Section("Overlay") {

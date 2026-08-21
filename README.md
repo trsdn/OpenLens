@@ -14,16 +14,19 @@ not touch audio, and has no timeline, no projects and no accounts.
 
 ## What it does
 
-- **Zoom and pan into any area of the frame.** Scroll or pinch over the preview
-  to zoom around the cursor, drag to pan, double-click to reset. There is also a
-  zoom slider in the inspector and **⌘+ / ⌘− / ⌘0** if you would rather not aim
-  with the mouse. The crop is a texture-coordinate remap inside a single Metal
-  pass, so it costs nothing.
-- **Lossless zoom.** Capture at the camera's native resolution and output 1080p,
-  and the picture stays pixel-perfect up to the point where the crop would start
-  upscaling. The badge tells you where that limit is.
-- **Scenes.** Save a camera, crop, mirror and overlay as a named look, and switch
-  between them with **⌥1…⌥9** — system-wide, so it works while you are in a call.
+- **Zoom and pan into any area of the frame.** Scroll or pinch over the picture
+  to zoom around the pointer, drag to pan, double-click to reset. The inspector
+  has a slider, an editable number field and **⌘+ / ⌘− / ⌘0**, all moving in
+  steps of 0.1×, if you would rather not aim with the mouse. The crop is a
+  texture-coordinate remap inside a single Metal pass, so it costs nothing.
+- **Sharp zoom.** Capture above 1080p and the crop still fills the 1080p output
+  with real pixels — no upscaling. The inspector shows how far that reaches
+  ("Stays sharp up to"), and the badge on the picture says `soft` once you pass
+  it.
+- **Scenes are the presets.** Camera, zoom, mirror and overlay are saved into
+  the selected scene as you change them — there is no save button. Duplicate
+  snapshots the current look, and **⌥1…⌥9** switch between scenes system-wide,
+  so it works while you are in a call.
 - **PNG overlay with alpha,** placed on a nine-position grid with an opacity
   slider and composited in the same GPU pass.
 - **Cheap.** Around 17 % of a single core — roughly 1.4 % of an M4 Pro — at
@@ -108,7 +111,7 @@ xcrun notarytool store-credentials openlens-notary \
 | The camera never appears in Zoom | The extension is not approved yet, or the app was launched from outside `/Applications`. |
 | "Camera is in use" | Some UVC devices (Cam Link 4K among them) refuse concurrent access. Quit OBS or any other app holding the camera. |
 | A static card instead of the picture | The app is not running. The extension keeps the device alive on its own so calls do not break. |
-| Zoom looks soft | You are past the lossless limit shown in the badge. Raise **Capture quality** in the inspector. |
+| Zoom looks soft | You are past the "Stays sharp up to" limit in the inspector, and the badge says `soft`. Raise **Capture quality**. |
 
 ## License
 
