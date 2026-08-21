@@ -20,8 +20,14 @@ fi
 echo "==> Regenerating the Xcode project"
 xcodegen generate --quiet
 
-echo "==> Building ($CONFIGURATION)"
+# macOS only re-stages a system extension when its version changes, so every
+# development build gets a fresh build number. Without this the old extension
+# keeps running and changes appear to have no effect.
+BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M%S)}"
+
+echo "==> Building ($CONFIGURATION, build $BUILD_NUMBER)"
 xcodebuild \
+    CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
     -project OpenLens.xcodeproj \
     -scheme OpenLens \
     -configuration "$CONFIGURATION" \

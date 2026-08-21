@@ -1,102 +1,309 @@
+import CoreMedia
+import CoreMediaIO
+import QuartzCore
 import CoreVideo
 import Foundation
-import IOSurface
 import os.log
 
 /// The app's end of the frame transport.
 ///
-/// Frames travel as `IOSurface` send rights, so a 1080p frame costs a message
-/// with a mach port in it rather than 8 MB of copying.
+/// A CoreMediaIO extension cannot vend a private XPC service, so frames travel
+/// the way Apple intends: the extension publishes a *sink* stream alongside the
+/// camera, and the app enqueues buffers into that stream's simple queue. The
+/// buffers stay IOSurface-backed the whole way, so a 1080p frame costs a queue
+/// entry rather than 8 MB of copying.
 final class ExtensionClient: NSObject, ObservableObject {
     /// True while a conferencing app actually has the virtual camera open. The
     /// capture pipeline idles otherwise, which is the largest single power win.
     @Published private(set) var isStreaming = false
     @Published private(set) var isConnected = false
 
-    private var connection: NSXPCConnection?
-    private let queue = DispatchQueue(label: "com.trsdn.openlens.xpc")
-    private let log = Logger(subsystem: OpenLensID.appBundleID, category: "xpc")
-    private var reconnectDelay: TimeInterval = 0.5
+    /// Fires on the client's own queue as soon as the extension reports a
+    /// change. The frame pipeline uses this instead of the `@Published`
+    /// property so that starting to stream never waits on the main thread.
+    var onStreamingChanged: (@Sendable (Bool) -> Void)?
+
+    private let queue = DispatchQueue(label: "com.trsdn.openlens.sink", qos: .userInteractive)
+    private let log = Logger(subsystem: OpenLensID.appBundleID, category: "sink")
+
+    private var deviceID: CMIOObjectID = 0
+    private var sinkStreamID: CMIOObjectID = 0
+    private var bufferQueue: CMSimpleQueue?
+    private var isSinkRunning = false
     private var isShuttingDown = false
+    private var stateObserver: DarwinObserver?
+    private var retryDelay: TimeInterval = 0.5
+    private var lastFailureLog: CFTimeInterval = 0
+
+    // MARK: - Lifecycle
 
     func connect() {
-        queue.async { [weak self] in self?.establishConnection() }
+        observeDeviceList()
+        stateObserver = StreamingStateChannel.observe(queue: queue) { [weak self] streaming in
+            guard let self else { return }
+            self.onStreamingChanged?(streaming)
+            DispatchQueue.main.async { self.isStreaming = streaming }
+        }
+        queue.async { [weak self] in self?.locateDevice() }
     }
 
     func shutdown() {
-        queue.async { [weak self] in
-            guard let self else { return }
-            self.isShuttingDown = true
-            (self.connection?.remoteObjectProxy as? OpenLensExtensionInterface)?.disconnect()
-            self.connection?.invalidate()
-            self.connection = nil
+        queue.sync {
+            isShuttingDown = true
+            stopSink()
+            StreamingStateChannel.cancel(stateObserver)
+            stateObserver = nil
         }
     }
 
-    private func establishConnection() {
-        guard connection == nil, !isShuttingDown else { return }
-
-        let connection = NSXPCConnection(
-            machServiceName: OpenLensID.frameMachServiceName,
-            options: []
+    /// CoreMediaIO only refreshes a client's device list while that client is
+    /// listening for changes. Without this, the app keeps handing out object IDs
+    /// that belonged to a previous run of the extension, and every call fails
+    /// with `kCMIOHardwareBadStreamError`.
+    private func observeDeviceList() {
+        var address = CMIOObjectPropertyAddress(
+            mSelector: CMIOObjectPropertySelector(kCMIOHardwarePropertyDevices),
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
         )
-        connection.remoteObjectInterface = OpenLensXPC.extensionInterface()
-        connection.exportedInterface = OpenLensXPC.appInterface()
-        connection.exportedObject = self
-        connection.invalidationHandler = { [weak self] in self?.handleDrop() }
-        connection.interruptionHandler = { [weak self] in self?.handleDrop() }
-        connection.resume()
-        self.connection = connection
-
-        guard let proxy = connection.remoteObjectProxyWithErrorHandler({ [weak self] error in
-            self?.log.error(
-                "Extension unreachable: \(error.localizedDescription, privacy: .public)"
-            )
-            self?.handleDrop()
-        }) as? OpenLensExtensionInterface else { return }
-
-        proxy.connect { [weak self] streaming in
+        let status = CMIOObjectAddPropertyListenerBlock(
+            CMIOObjectID(kCMIOObjectSystemObject),
+            &address,
+            queue
+        ) { [weak self] _, _ in
             guard let self else { return }
-            self.reconnectDelay = 0.5
-            DispatchQueue.main.async {
-                self.isConnected = true
-                self.isStreaming = streaming
-            }
+            self.stopSink()
+            self.locateDevice()
+        }
+        if status != noErr {
+            log.error("Device list listener failed: \(status)")
         }
     }
 
-    private func handleDrop() {
-        queue.async { [weak self] in
-            guard let self, !self.isShuttingDown else { return }
-            self.connection?.invalidate()
-            self.connection = nil
-            DispatchQueue.main.async {
-                self.isConnected = false
-                self.isStreaming = false
-            }
-            // The extension is demand-launched by the CoreMediaIO assistant, so a
-            // failure here is usually "not running yet" rather than "broken".
-            let delay = self.reconnectDelay
-            self.reconnectDelay = min(delay * 2, 10)
-            self.queue.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.establishConnection()
-            }
+    private func locateDevice() {
+        guard !isShuttingDown, deviceID == 0 else { return }
+
+        if let found = Self.findOpenLensDevice() {
+            deviceID = found.device
+            sinkStreamID = found.sink
+            retryDelay = 0.5
+            log.info("Found virtual camera \(found.device), sink stream \(found.sink)")
+            DispatchQueue.main.async { self.isConnected = true }
+            // Opening the sink now pins the extension process for as long as the
+            // app runs. CoreMediaIO object IDs only stay valid while the
+            // extension lives, so this removes an entire class of races.
+            startSinkIfNeeded()
+            return
         }
+
+        // The extension is demand-launched, so "not there yet" is the normal
+        // first answer right after an install.
+        DispatchQueue.main.async { self.isConnected = false }
+        let delay = retryDelay
+        retryDelay = min(delay * 2, 10)
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in self?.locateDevice() }
+    }
+
+    // MARK: - Sink stream
+
+    private func startSinkIfNeeded() {
+        guard !isSinkRunning, !isShuttingDown else { return }
+
+        // CoreMediaIO object IDs are only valid until the extension restarts, and
+        // during development that happens on every install. Resolving them here
+        // rather than caching them at launch keeps the app self-healing.
+        if deviceID == 0 || sinkStreamID == 0 {
+            guard let found = Self.findOpenLensDevice() else {
+                reportFailure("Virtual camera device not found")
+                return
+            }
+            deviceID = found.device
+            sinkStreamID = found.sink
+            log.info("Resolved device \(found.device), sink stream \(found.sink)")
+        }
+
+        var queueRef: Unmanaged<CMSimpleQueue>?
+        // A nil altered-proc returns noErr but hands back no queue, so the
+        // callback is required even though there is nothing to do in it: the
+        // send path already checks the queue's fullness before enqueuing.
+        let copyStatus = CMIOStreamCopyBufferQueue(
+            sinkStreamID,
+            { _, _, _ in },
+            nil,
+            &queueRef
+        )
+        guard copyStatus == noErr, let queueRef else {
+            reportFailure("CMIOStreamCopyBufferQueue failed: \(copyStatus)")
+            invalidateIDs()
+            return
+        }
+        bufferQueue = queueRef.takeRetainedValue()
+
+        let startStatus = CMIODeviceStartStream(deviceID, sinkStreamID)
+        guard startStatus == noErr else {
+            reportFailure("CMIODeviceStartStream failed: \(startStatus)")
+            bufferQueue = nil
+            invalidateIDs()
+            return
+        }
+        isSinkRunning = true
+        log.info("Sink stream running (device \(self.deviceID), stream \(self.sinkStreamID))")
+    }
+
+    private func invalidateIDs() {
+        deviceID = 0
+        sinkStreamID = 0
+    }
+
+    /// The send path runs at frame rate, so failures are logged at most once a
+    /// second rather than thirty times.
+    private func reportFailure(_ message: String) {
+        let now = CACurrentMediaTime()
+        guard now - lastFailureLog > 1 else { return }
+        lastFailureLog = now
+        log.error("\(message, privacy: .public)")
+    }
+
+    private func stopSink() {
+        guard isSinkRunning else {
+            invalidateIDs()
+            return
+        }
+        CMIODeviceStopStream(deviceID, sinkStreamID)
+        bufferQueue = nil
+        isSinkRunning = false
+        invalidateIDs()
+        log.info("Sink stream stopped")
     }
 
     /// Hands one rendered frame to the extension.
     func send(pixelBuffer: CVPixelBuffer, hostTimeNanos: UInt64) {
-        guard let surface = CVPixelBufferGetIOSurface(pixelBuffer)?.takeUnretainedValue()
-        else { return }
-        guard let proxy = connection?.remoteObjectProxy as? OpenLensExtensionInterface else {
-            return
-        }
-        proxy.submitFrame(unsafeBitCast(surface, to: IOSurface.self), hostTimeNanos: hostTimeNanos)
-    }
-}
+        queue.async { [weak self] in
+            guard let self, !self.isShuttingDown else { return }
+            self.startSinkIfNeeded()
+            guard let bufferQueue = self.bufferQueue else { return }
 
-extension ExtensionClient: OpenLensAppInterface {
-    func streamingStateChanged(_ isStreaming: Bool) {
-        DispatchQueue.main.async { self.isStreaming = isStreaming }
+            // Dropping the newest frame under back-pressure is better than
+            // queueing latency into a live call.
+            guard CMSimpleQueueGetCount(bufferQueue) < CMSimpleQueueGetCapacity(bufferQueue) else {
+                self.reportFailure("Sink queue full, dropping frame")
+                return
+            }
+            guard let sampleBuffer = Self.makeSampleBuffer(
+                pixelBuffer: pixelBuffer,
+                hostTimeNanos: hostTimeNanos
+            ) else { return }
+
+            let status = CMSimpleQueueEnqueue(
+                bufferQueue,
+                element: Unmanaged.passRetained(sampleBuffer).toOpaque()
+            )
+            if status != noErr {
+                Unmanaged.passUnretained(sampleBuffer).release()
+                self.log.error("Enqueue failed: \(status)")
+            }
+        }
+    }
+
+    private static func makeSampleBuffer(
+        pixelBuffer: CVPixelBuffer,
+        hostTimeNanos: UInt64
+    ) -> CMSampleBuffer? {
+        var formatDescription: CMFormatDescription?
+        guard CMVideoFormatDescriptionCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescriptionOut: &formatDescription
+        ) == noErr, let formatDescription else { return nil }
+
+        var timing = CMSampleTimingInfo(
+            duration: CMTime(value: 1, timescale: CMTimeScale(OpenLensOutput.frameRate)),
+            presentationTimeStamp: CMTime(
+                value: CMTimeValue(hostTimeNanos),
+                timescale: CMTimeScale(NSEC_PER_SEC)
+            ),
+            decodeTimeStamp: .invalid
+        )
+
+        var sampleBuffer: CMSampleBuffer?
+        guard CMSampleBufferCreateReadyWithImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescription: formatDescription,
+            sampleTiming: &timing,
+            sampleBufferOut: &sampleBuffer
+        ) == noErr else { return nil }
+        return sampleBuffer
+    }
+
+    // MARK: - CoreMediaIO discovery
+
+    private static func findOpenLensDevice() -> (device: CMIOObjectID, sink: CMIOObjectID)? {
+        let system = CMIOObjectID(kCMIOObjectSystemObject)
+        for device in objectIDs(of: system, selector: CMIOObjectPropertySelector(kCMIOHardwarePropertyDevices)) {
+            guard string(of: device, selector: CMIOObjectPropertySelector(kCMIODevicePropertyDeviceUID))
+                == OpenLensID.deviceUUID.uuidString else { continue }
+
+            let streams = objectIDs(of: device, selector: CMIOObjectPropertySelector(kCMIODevicePropertyStreams))
+            // Streams are added source-first, but match on the name so a future
+            // reordering cannot silently start feeding the wrong stream.
+            let sink = streams.first {
+                string(of: $0, selector: CMIOObjectPropertySelector(kCMIOObjectPropertyName)) == OpenLensID.sinkStreamName
+            } ?? (streams.count > 1 ? streams[1] : nil)
+
+            if let sink { return (device, sink) }
+        }
+        return nil
+    }
+
+    private static func objectIDs(
+        of object: CMIOObjectID,
+        selector: CMIOObjectPropertySelector
+    ) -> [CMIOObjectID] {
+        var address = CMIOObjectPropertyAddress(
+            mSelector: selector,
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+        )
+        var dataSize: UInt32 = 0
+        var dataUsed: UInt32 = 0
+        guard CMIOObjectGetPropertyDataSize(object, &address, 0, nil, &dataSize) == noErr,
+              dataSize > 0 else { return [] }
+
+        let count = Int(dataSize) / MemoryLayout<CMIOObjectID>.size
+        var ids = [CMIOObjectID](repeating: 0, count: count)
+        let status = ids.withUnsafeMutableBytes { buffer in
+            CMIOObjectGetPropertyData(
+                object, &address, 0, nil, dataSize, &dataUsed, buffer.baseAddress
+            )
+        }
+        guard status == noErr else { return [] }
+        return ids
+    }
+
+    private static func string(
+        of object: CMIOObjectID,
+        selector: CMIOObjectPropertySelector
+    ) -> String? {
+        var address = CMIOObjectPropertyAddress(
+            mSelector: selector,
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+        )
+        var dataUsed: UInt32 = 0
+        var value: Unmanaged<CFString>?
+        let status = withUnsafeMutablePointer(to: &value) { pointer in
+            CMIOObjectGetPropertyData(
+                object,
+                &address,
+                0,
+                nil,
+                UInt32(MemoryLayout<Unmanaged<CFString>?>.size),
+                &dataUsed,
+                pointer
+            )
+        }
+        guard status == noErr, let value else { return nil }
+        return value.takeRetainedValue() as String
     }
 }

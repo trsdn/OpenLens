@@ -45,6 +45,9 @@ final class FramePipeline: NSObject, @unchecked Sendable {
         self.renderer = renderer
         self.extensionClient = extensionClient
         super.init()
+        extensionClient.onStreamingChanged = { [weak self] streaming in
+            self?.update { $0.wantsOutput = streaming }
+        }
     }
 
     // MARK: - State updates (called from the main thread)

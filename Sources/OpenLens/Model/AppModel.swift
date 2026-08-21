@@ -27,6 +27,10 @@ final class AppModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var lastFrameActivity = Date.distantPast
     private var healthTimer: Timer?
+    /// Video work is latency sensitive and mostly happens while the window is in
+    /// the background, which is exactly when App Nap would otherwise throttle
+    /// timers and delay the switch into streaming by several seconds.
+    private var activity: NSObjectProtocol?
 
     var isReady: Bool { pipeline != nil }
 
@@ -48,7 +52,7 @@ final class AppModel: ObservableObject {
 
         extensionClient.$isStreaming
             .removeDuplicates()
-            .sink { [weak self] _ in self?.reconcilePipeline() }
+            .sink { [weak self] streaming in self?.reconcilePipeline(streaming: streaming) }
             .store(in: &cancellables)
 
         scenes.$selectedSceneID
@@ -76,6 +80,10 @@ final class AppModel: ObservableObject {
         if !cameraAuthorized {
             errorMessage = CaptureError.permissionDenied.errorDescription
         }
+        activity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .latencyCritical],
+            reason: "Driving the OpenLens virtual camera"
+        )
         refreshDevices()
         installer.activate()
         extensionClient.connect()
@@ -92,6 +100,10 @@ final class AppModel: ObservableObject {
         capture.stop()
         extensionClient.shutdown()
         healthTimer?.invalidate()
+        if let activity {
+            ProcessInfo.processInfo.endActivity(activity)
+            self.activity = nil
+        }
     }
 
     func refreshDevices() {
@@ -307,8 +319,11 @@ final class AppModel: ObservableObject {
     /// The capture session only runs when someone will actually see the result:
     /// either a conferencing app has the virtual camera open, or our window is
     /// on screen. Idle cost is then genuinely zero.
-    private func reconcilePipeline() {
-        let streaming = extensionClient.isStreaming
+    /// `@Published` sends its value from `willSet`, so a subscriber that re-reads
+    /// `extensionClient.isStreaming` sees the *previous* value and would undo the
+    /// change it was notified about. The new value is therefore passed in.
+    private func reconcilePipeline(streaming streamingOverride: Bool? = nil) {
+        let streaming = streamingOverride ?? extensionClient.isStreaming
         pipeline?.update { $0.wantsOutput = streaming }
 
         if streaming || previewVisible {

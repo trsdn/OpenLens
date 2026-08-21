@@ -144,6 +144,23 @@ final class CaptureEngine: NSObject {
             return
         }
 
+        // startRunning() must not be called inside a configuration block, so the
+        // reconfiguration is scoped to its own function and the session is only
+        // started once commitConfiguration() has run.
+        guard applyConfiguration(device: device, deviceID: deviceID, quality: quality) else {
+            return
+        }
+
+        if !session.isRunning {
+            session.startRunning()
+        }
+    }
+
+    private func applyConfiguration(
+        device: AVCaptureDevice,
+        deviceID: String,
+        quality: CaptureQuality
+    ) -> Bool {
         session.beginConfiguration()
         defer { session.commitConfiguration() }
 
@@ -155,21 +172,21 @@ final class CaptureEngine: NSObject {
         guard let format = Self.bestFormat(for: device, maxPixelCount: quality.maxPixelCount)
         else {
             delegate?.captureEngine(self, didFailWith: .noUsableFormat(device.localizedName))
-            return
+            return false
         }
 
         do {
             let input = try AVCaptureDeviceInput(device: device)
             guard session.canAddInput(input) else {
                 delegate?.captureEngine(self, didFailWith: .deviceInUse(device.localizedName))
-                return
+                return false
             }
             session.addInput(input)
             currentInput = input
         } catch {
             log.error("Input creation failed: \(error.localizedDescription, privacy: .public)")
             delegate?.captureEngine(self, didFailWith: .deviceInUse(device.localizedName))
-            return
+            return false
         }
 
         do {
@@ -199,15 +216,13 @@ final class CaptureEngine: NSObject {
         sourcePixelSize = CGSize(width: Int(dimensions.width), height: Int(dimensions.height))
         currentDeviceID = deviceID
 
-        if !session.isRunning {
-            session.startRunning()
-        }
         log.info(
             """
             Capturing \(device.localizedName, privacy: .public) at \
             \(dimensions.width)x\(dimensions.height)
             """
         )
+        return true
     }
 
     // MARK: - Format selection

@@ -7,7 +7,6 @@ import os.log
 final class OpenLensProviderSource: NSObject, CMIOExtensionProviderSource {
     private(set) var provider: CMIOExtensionProvider!
     private var deviceSource: OpenLensDeviceSource!
-    private var frameService: FrameService!
 
     init(clientQueue: DispatchQueue?) {
         super.init()
@@ -18,8 +17,7 @@ final class OpenLensProviderSource: NSObject, CMIOExtensionProviderSource {
         } catch {
             logger.error("Failed to add device: \(error.localizedDescription, privacy: .public)")
         }
-        frameService = FrameService(relay: deviceSource.streamSource.relay)
-        frameService.resume()
+        deviceSource.streamSource.relay.activate()
     }
 
     func connect(to client: CMIOExtensionClient) throws {}
@@ -46,6 +44,7 @@ final class OpenLensProviderSource: NSObject, CMIOExtensionProviderSource {
 final class OpenLensDeviceSource: NSObject, CMIOExtensionDeviceSource {
     private(set) var device: CMIOExtensionDevice!
     private(set) var streamSource: OpenLensStreamSource!
+    private(set) var sinkSource: OpenLensSinkStreamSource!
 
     override init() {
         super.init()
@@ -78,8 +77,16 @@ final class OpenLensDeviceSource: NSObject, CMIOExtensionDeviceSource {
         )
 
         streamSource = OpenLensStreamSource(streamFormat: streamFormat)
+        // The app pushes rendered frames into the sink stream. This is the only
+        // transport a sandboxed CoreMediaIO extension can offer, and it keeps the
+        // frames as IOSurface-backed buffers end to end.
+        sinkSource = OpenLensSinkStreamSource(
+            streamFormat: streamFormat,
+            relay: streamSource.relay
+        )
         do {
             try device.addStream(streamSource.stream)
+            try device.addStream(sinkSource.stream)
         } catch {
             fatalError("Unable to add the stream: \(error)")
         }
@@ -114,7 +121,7 @@ final class OpenLensStreamSource: NSObject, CMIOExtensionStreamSource {
         self.streamFormat = streamFormat
         super.init()
         stream = CMIOExtensionStream(
-            localizedName: "OpenLens.Video",
+            localizedName: OpenLensID.sourceStreamName,
             streamID: OpenLensID.streamUUID,
             direction: .source,
             clockType: .hostTime,
@@ -167,5 +174,117 @@ final class OpenLensStreamSource: NSObject, CMIOExtensionStreamSource {
     func stopStream() throws {
         logger.info("Stream stopped")
         relay.stopStreaming()
+    }
+}
+
+/// The app's end of the frame transport: a sink stream the app enqueues into.
+final class OpenLensSinkStreamSource: NSObject, CMIOExtensionStreamSource {
+    private(set) var stream: CMIOExtensionStream!
+    private let streamFormat: CMIOExtensionStreamFormat
+    private let relay: FrameRelay
+    private let queue = DispatchQueue(label: "com.trsdn.openlens.sink", qos: .userInteractive)
+    private var client: CMIOExtensionClient?
+    private var isConsuming = false
+
+    init(streamFormat: CMIOExtensionStreamFormat, relay: FrameRelay) {
+        self.streamFormat = streamFormat
+        self.relay = relay
+        super.init()
+        stream = CMIOExtensionStream(
+            localizedName: OpenLensID.sinkStreamName,
+            streamID: OpenLensID.sinkStreamUUID,
+            direction: .sink,
+            clockType: .hostTime,
+            source: self
+        )
+    }
+
+    var formats: [CMIOExtensionStreamFormat] { [streamFormat] }
+
+    var activeFormatIndex: Int = 0
+
+    var availableProperties: Set<CMIOExtensionProperty> {
+        [.streamActiveFormatIndex, .streamFrameDuration, .streamSinkBufferQueueSize,
+         .streamSinkBuffersRequiredForStartup, .streamSinkEndOfData]
+    }
+
+    func streamProperties(
+        forProperties properties: Set<CMIOExtensionProperty>
+    ) throws -> CMIOExtensionStreamProperties {
+        let streamProperties = CMIOExtensionStreamProperties(dictionary: [:])
+        if properties.contains(.streamActiveFormatIndex) {
+            streamProperties.activeFormatIndex = 0
+        }
+        if properties.contains(.streamFrameDuration) {
+            streamProperties.frameDuration =
+                CMTime(value: 1, timescale: CMTimeScale(OpenLensOutput.frameRate))
+        }
+        if properties.contains(.streamSinkBufferQueueSize) {
+            streamProperties.sinkBufferQueueSize = 3
+        }
+        if properties.contains(.streamSinkBuffersRequiredForStartup) {
+            streamProperties.sinkBuffersRequiredForStartup = 1
+        }
+        return streamProperties
+    }
+
+    func setStreamProperties(_ streamProperties: CMIOExtensionStreamProperties) throws {
+        if let index = streamProperties.activeFormatIndex {
+            activeFormatIndex = index
+        }
+    }
+
+    func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
+        self.client = client
+        return true
+    }
+
+    func startStream() throws {
+        logger.info("Sink stream started")
+        queue.async {
+            guard !self.isConsuming else { return }
+            self.isConsuming = true
+            self.consumeNext()
+        }
+    }
+
+    func stopStream() throws {
+        logger.info("Sink stream stopped")
+        queue.async {
+            self.isConsuming = false
+            self.relay.appDisconnected()
+        }
+    }
+
+    /// Pulls one buffer and immediately re-arms. `consumeSampleBuffer` blocks in
+    /// the extension's own dispatch machinery rather than spinning, so this is a
+    /// pull loop without a timer.
+    private func consumeNext() {
+        guard isConsuming else { return }
+        guard let client else {
+            logger.error("Sink has no authorized client; cannot consume")
+            return
+        }
+        stream.consumeSampleBuffer(from: client) { [weak self] sampleBuffer, sequence, _, _, error in
+            guard let self else { return }
+            if let sampleBuffer {
+                let hostTime = UInt64(
+                    sampleBuffer.presentationTimeStamp.convertScale(
+                        Int32(NSEC_PER_SEC),
+                        method: .default
+                    ).value
+                )
+                self.relay.submit(sampleBuffer: sampleBuffer, hostTimeNanos: hostTime)
+                self.stream.notifyScheduledOutputChanged(
+                    CMIOExtensionScheduledOutput(
+                        sequenceNumber: sequence,
+                        hostTimeInNanoseconds: hostTime
+                    )
+                )
+            } else if let error {
+                logger.error("Sink consume failed: \(error.localizedDescription, privacy: .public)")
+            }
+            self.queue.async { self.consumeNext() }
+        }
     }
 }

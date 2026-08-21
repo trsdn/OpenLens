@@ -1,14 +1,15 @@
+import CoreMedia
 import CoreMediaIO
 import CoreVideo
 import Foundation
 import IOSurface
 import os.log
 
-/// Forwards frames to the CMIO stream.
+/// Forwards frames to the CMIO source stream.
 ///
-/// Two sources feed it: the app (over XPC, zero-copy IOSurfaces) and, whenever
-/// the app is absent or stalled, a prerendered placeholder so that conferencing
-/// apps never see a frozen or black camera.
+/// Two sources feed it: the app (through the sink stream) and, whenever the app
+/// is absent or stalled, a prerendered placeholder so that conferencing apps
+/// never see a frozen or black camera.
 final class FrameRelay {
     weak var stream: CMIOExtensionStream?
 
@@ -20,20 +21,29 @@ final class FrameRelay {
     private var formatDimensions = CMVideoDimensions(width: 0, height: 0)
     private lazy var idlePixelBuffer: CVPixelBuffer? = IdleFrameRenderer.makePlaceholder()
 
+    /// Answers the app when it launches mid-call and needs the current state.
+    private lazy var queryResponder: DarwinObserver = StreamingStateChannel.answerQueries {
+        [weak self] in self?.queue.sync { self?.isStreaming ?? false } ?? false
+    }
+
     /// If the app goes this long without delivering a frame we fall back to the
     /// placeholder rather than letting the consumer's picture freeze.
     private let appFrameTimeout: UInt64 = 500_000_000
 
-    private var streamingObservers: [UUID: (Bool) -> Void] = [:]
-
     // MARK: - Streaming lifecycle
+
+    /// Registers the state responder. Called once at extension start-up so the
+    /// app gets an answer even if it launches before anything streams.
+    func activate() {
+        _ = queryResponder
+    }
 
     func startStreaming() {
         queue.async {
             guard !self.isStreaming else { return }
             self.isStreaming = true
             self.startIdleTimer()
-            self.notifyObservers(true)
+            StreamingStateChannel.publish(true)
         }
     }
 
@@ -42,51 +52,21 @@ final class FrameRelay {
             guard self.isStreaming else { return }
             self.isStreaming = false
             self.stopIdleTimer()
-            self.notifyObservers(false)
+            StreamingStateChannel.publish(false)
         }
-    }
-
-    func currentStreamingState(_ completion: @escaping (Bool) -> Void) {
-        queue.async { completion(self.isStreaming) }
-    }
-
-    func addStreamingObserver(_ observer: @escaping (Bool) -> Void) -> UUID {
-        let token = UUID()
-        queue.async {
-            self.streamingObservers[token] = observer
-            observer(self.isStreaming)
-        }
-        return token
-    }
-
-    func removeStreamingObserver(_ token: UUID) {
-        queue.async { self.streamingObservers.removeValue(forKey: token) }
-    }
-
-    private func notifyObservers(_ streaming: Bool) {
-        for observer in streamingObservers.values { observer(streaming) }
     }
 
     // MARK: - App frames
 
-    func submit(surface: IOSurface, hostTimeNanos: UInt64) {
+    /// Forwards a buffer that arrived on the sink stream. The image buffer is
+    /// reused as-is, so nothing is copied on this path.
+    func submit(sampleBuffer: CMSampleBuffer, hostTimeNanos: UInt64) {
         queue.async {
             guard self.isStreaming else { return }
-            self.lastAppFrameHostTime = hostTimeNanos
-
-            var unmanaged: Unmanaged<CVPixelBuffer>?
-            let status = CVPixelBufferCreateWithIOSurface(
-                kCFAllocatorDefault,
-                surface as IOSurfaceRef,
-                nil,
-                &unmanaged
-            )
-            guard status == kCVReturnSuccess, let pixelBuffer = unmanaged?.takeRetainedValue()
-            else {
-                logger.error("CVPixelBufferCreateWithIOSurface failed: \(status)")
-                return
-            }
-            self.send(pixelBuffer, hostTimeNanos: hostTimeNanos)
+            let timestamp = hostTimeNanos == 0 ? FrameRelay.hostTimeNanos() : hostTimeNanos
+            self.lastAppFrameHostTime = timestamp
+            guard let stream = self.stream else { return }
+            stream.send(sampleBuffer, discontinuity: [], hostTimeInNanoseconds: timestamp)
         }
     }
 
