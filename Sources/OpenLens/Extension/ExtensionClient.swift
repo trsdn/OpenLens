@@ -42,6 +42,9 @@ final class ExtensionClient: NSObject, ObservableObject {
     private var retryDelay: TimeInterval = 0.5
     private var lastFailureLog: CFTimeInterval = 0
     private var searchStartedAt: CFTimeInterval?
+    /// Built once. The output format never changes, and rebuilding it per frame
+    /// made CoreMedia re-derive the colour metadata 30 times a second.
+    private var outputFormat: CMFormatDescription?
 
     /// How long the search may fail before the UI stops promising a connection.
     /// The extension is demand-launched, so a few seconds of "not there yet" is
@@ -231,7 +234,7 @@ final class ExtensionClient: NSObject, ObservableObject {
                 self.reportFailure("Sink queue full, dropping frame")
                 return
             }
-            guard let sampleBuffer = Self.makeSampleBuffer(
+            guard let sampleBuffer = self.makeSampleBuffer(
                 pixelBuffer: pixelBuffer,
                 hostTimeNanos: hostTimeNanos
             ) else { return }
@@ -247,16 +250,11 @@ final class ExtensionClient: NSObject, ObservableObject {
         }
     }
 
-    private static func makeSampleBuffer(
+    private func makeSampleBuffer(
         pixelBuffer: CVPixelBuffer,
         hostTimeNanos: UInt64
     ) -> CMSampleBuffer? {
-        var formatDescription: CMFormatDescription?
-        guard CMVideoFormatDescriptionCreateForImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
-            formatDescriptionOut: &formatDescription
-        ) == noErr, let formatDescription else { return nil }
+        guard let formatDescription = formatDescription(for: pixelBuffer) else { return nil }
 
         var timing = CMSampleTimingInfo(
             duration: CMTime(value: 1, timescale: CMTimeScale(OpenLensOutput.frameRate)),
@@ -276,6 +274,21 @@ final class ExtensionClient: NSObject, ObservableObject {
             sampleBufferOut: &sampleBuffer
         ) == noErr else { return nil }
         return sampleBuffer
+    }
+
+    private func formatDescription(for pixelBuffer: CVPixelBuffer) -> CMFormatDescription? {
+        if let outputFormat,
+           CMVideoFormatDescriptionMatchesImageBuffer(outputFormat, imageBuffer: pixelBuffer) {
+            return outputFormat
+        }
+        var created: CMFormatDescription?
+        guard CMVideoFormatDescriptionCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescriptionOut: &created
+        ) == noErr else { return nil }
+        outputFormat = created
+        return created
     }
 
     // MARK: - CoreMediaIO discovery

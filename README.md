@@ -58,6 +58,38 @@ camera extension through a CoreMediaIO **sink stream**. The extension republishe
 it on the virtual camera device, and falls back to a placeholder card whenever the
 app is not running.
 
+## Performance
+
+Measured on an M4 Pro at 1080p30 with a Cam Link 4K, streaming to a real consumer,
+as a percentage of **one** CPU core:
+
+| | app | extension | total |
+| --- | --- | --- | --- |
+| Preview visible | 7.7 % | 3.6 % | **11.3 %** |
+| Preview hidden | 6.3 % | 3.6 % | **9.9 %** |
+
+Hiding the preview (inspector → Preview → Show preview) saves about 1.4 points.
+It is worth switching off once a call is running, but it is not the main cost —
+the virtual camera keeps streaming either way.
+
+Two findings worth recording, because both were counter-intuitive:
+
+- The extension used to burn **a third of a core doing nothing**.
+  `CMIOExtensionStream.consumeSampleBuffer(from:)` does *not* block on an empty
+  sink queue — it calls back immediately with a `nil` buffer. Re-arming from the
+  completion handler, which is the shape Apple's sample code suggests, is therefore
+  a busy loop. Successful reads now re-arm immediately, empty reads back off 4 ms.
+  This alone took the total from 52 % to 11 % and cost no frames: still exactly
+  30.00 fps.
+- Sending **NV12 instead of BGRA** moves 62 % fewer bytes per frame and measured as
+  **zero** improvement. It is kept because it is the format the rest of the stack
+  wants, but it is not why this is fast. CoreMediaIO hands consumers `2vuy`
+  regardless of what we send.
+
+The lesson both times: measure the states, don't trust the theory. `ps %cpu` is a
+lifetime average and will hide all of this — diff `ps -o time=` over a fixed window
+instead.
+
 ## Install
 
 Requires macOS 14 or newer on Apple Silicon.

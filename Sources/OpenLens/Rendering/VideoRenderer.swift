@@ -167,19 +167,15 @@ final class VideoRenderer {
         ]
         guard encode(frame, passes: passes, present: nil) else { return nil }
 
-        // The tagging has to describe what the shader actually wrote, or every
-        // consumer will decode the picture with the wrong matrix.
+        // Only the matrix is signalled. A consumer needs it to decode the two
+        // planes, and getting it wrong is visible. Primaries and transfer
+        // function are display characteristics that every conferencing app
+        // assumes to be 709/sRGB anyway — and tagging them made CoreMedia
+        // synthesise an ICC profile, which it then rebuilt into a gamma LUT on
+        // every single frame.
         CVBufferSetAttachment(
             output, kCVImageBufferYCbCrMatrixKey,
             kCVImageBufferYCbCrMatrix_ITU_R_601_4, .shouldPropagate
-        )
-        CVBufferSetAttachment(
-            output, kCVImageBufferColorPrimariesKey,
-            kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate
-        )
-        CVBufferSetAttachment(
-            output, kCVImageBufferTransferFunctionKey,
-            kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate
         )
         return output
     }
