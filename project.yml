@@ -67,6 +67,7 @@ targets:
     sources:
       - path: Tests/OpenLensTests
       - path: Sources/OpenLensShared
+      - path: Sources/OpenLens/Rendering
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.trsdn.openlens.tests

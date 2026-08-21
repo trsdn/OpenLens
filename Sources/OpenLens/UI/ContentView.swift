@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -27,7 +28,17 @@ struct ContentView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 if let message = model.errorMessage {
-                    banner(message, systemImage: "exclamationmark.triangle.fill", tint: .orange)
+                    HStack(spacing: 8) {
+                        banner(message, systemImage: "exclamationmark.triangle.fill", tint: .orange)
+                        if !model.cameraAuthorized {
+                            Button("Open Privacy Settings") {
+                                guard let url = URL(
+                                    string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
+                                ) else { return }
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                    }
                 }
                 ExtensionStatusBanner(model: model)
                 ZoomBadge(model: model)
@@ -101,16 +112,29 @@ struct ExtensionStatusBanner: View {
         case .installing:
             pill("Installing the camera extension…", icon: "hourglass", tint: .secondary)
         case .needsApproval:
-            pill(
-                "Approve OpenLens in System Settings › General › Login Items & Extensions",
-                icon: "lock.shield",
-                tint: .orange
-            )
+            HStack(spacing: 8) {
+                pill(
+                    "Approve OpenLens in System Settings › General › Login Items & Extensions",
+                    icon: "lock.shield",
+                    tint: .orange
+                )
+                Button("Open Settings") { Self.openLoginItemsSettings() }
+                    .buttonStyle(.borderedProminent)
+            }
         case .needsReboot:
             pill("Restart your Mac to finish installing the camera", icon: "arrow.clockwise", tint: .orange)
         case .failed(let message):
             pill(message, icon: "exclamationmark.triangle.fill", tint: .red)
         }
+    }
+
+    /// Deep link straight to the pane that lists system extensions; hunting for
+    /// it manually is the single most common place first-run gets stuck.
+    static func openLoginItemsSettings() {
+        guard let url = URL(
+            string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
+        ) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func pill(_ text: String, icon: String, tint: Color) -> some View {

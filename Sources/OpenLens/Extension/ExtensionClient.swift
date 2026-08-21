@@ -80,6 +80,21 @@ final class ExtensionClient: NSObject, ObservableObject {
         }
     }
 
+    /// Forces a fresh look for the virtual camera.
+    ///
+    /// Replacing the extension (an app update, or a reinstall) tears down the
+    /// device behind the app's back and every cached CoreMediaIO object ID dies
+    /// with it. AVFoundation notices the device coming and going, so the model
+    /// drives this from those notifications.
+    func rediscover() {
+        queue.async { [weak self] in
+            guard let self, !self.isShuttingDown else { return }
+            self.stopSink()
+            self.retryDelay = 0.5
+            self.locateDevice()
+        }
+    }
+
     private func locateDevice() {
         guard !isShuttingDown, deviceID == 0 else { return }
 

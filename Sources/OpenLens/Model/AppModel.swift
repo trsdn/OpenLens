@@ -31,6 +31,7 @@ final class AppModel: ObservableObject {
     /// the background, which is exactly when App Nap would otherwise throttle
     /// timers and delay the switch into streaming by several seconds.
     private var activity: NSObjectProtocol?
+    private let hotKeys = GlobalHotKeys()
 
     var isReady: Bool { pipeline != nil }
 
@@ -65,7 +66,10 @@ final class AppModel: ObservableObject {
             .merge(with: NotificationCenter.default.publisher(
                 for: AVCaptureDevice.wasDisconnectedNotification
             ))
-            .sink { [weak self] _ in self?.refreshDevices() }
+            .sink { [weak self] _ in
+                self?.refreshDevices()
+                self?.extensionClient.rediscover()
+            }
             .store(in: &cancellables)
 
         healthTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
@@ -84,6 +88,8 @@ final class AppModel: ObservableObject {
             options: [.userInitiated, .latencyCritical],
             reason: "Driving the OpenLens virtual camera"
         )
+        hotKeys.onSelect = { [weak self] index in self?.selectScene(at: index) }
+        hotKeys.register()
         refreshDevices()
         installer.activate()
         extensionClient.connect()
@@ -99,6 +105,7 @@ final class AppModel: ObservableObject {
     func shutdown() {
         capture.stop()
         extensionClient.shutdown()
+        hotKeys.unregister()
         healthTimer?.invalidate()
         if let activity {
             ProcessInfo.processInfo.endActivity(activity)

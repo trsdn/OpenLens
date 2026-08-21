@@ -43,6 +43,12 @@ if [[ ! -d "$BUILT_APP" ]]; then
     exit 1
 fi
 
+if [[ "${INSTALL_TO_APPLICATIONS:-1}" != "1" ]]; then
+    echo "==> Skipping installation (INSTALL_TO_APPLICATIONS=0)"
+    echo "$BUILT_APP"
+    exit 0
+fi
+
 if pgrep -x OpenLens >/dev/null 2>&1; then
     echo "==> Quitting the running copy"
     osascript -e 'quit app "OpenLens"' || true

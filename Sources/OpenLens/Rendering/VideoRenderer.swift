@@ -47,7 +47,14 @@ final class VideoRenderer {
         guard let queue = device.makeCommandQueue() else { throw RendererError.noDevice }
         self.commandQueue = queue
 
-        guard let library = device.makeDefaultLibrary() else {
+        // Resolving the library from the bundle that owns this class rather than
+        // the main bundle lets the render pass run inside a unit-test bundle too.
+        let library: MTLLibrary
+        if let bundled = try? device.makeDefaultLibrary(bundle: Bundle(for: VideoRenderer.self)) {
+            library = bundled
+        } else if let main = device.makeDefaultLibrary() {
+            library = main
+        } else {
             throw RendererError.libraryUnavailable
         }
 
