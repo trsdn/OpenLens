@@ -103,11 +103,26 @@ final class VideoRendererTests: XCTestCase {
         return output
     }
 
+    /// The pool hands back zeroed surfaces, so a luma of 0 means the GPU has not
+    /// written this buffer yet. Every test fixture renders a saturated colour,
+    /// none of which encodes to luma 0.
     private func isBlank(_ buffer: CVPixelBuffer) -> Bool {
-        guard let pixel = try? sample(buffer, atX: 0.5, y: 0.5) else { return true }
-        return pixel.r == 0 && pixel.g == 0 && pixel.b == 0
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return true }
+        let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+        let y = CVPixelBufferGetHeight(buffer) / 2
+        let x = CVPixelBufferGetWidth(buffer) / 2
+        return base.advanced(by: y * stride + x).assumingMemoryBound(to: UInt8.self)[0] == 0
     }
 
+    /// Reads back an NV12 pixel and decodes it to RGB.
+    ///
+    /// The output plane layout is the product of the shader's colour conversion,
+    /// so decoding it here with the inverse BT.601 video-range transform is what
+    /// proves the conversion is correct rather than merely plausible: a wrong
+    /// matrix, range or plane order turns a saturated primary into mud and every
+    /// dominance assertion below fails.
     private func sample(
         _ buffer: CVPixelBuffer,
         atX xFraction: CGFloat,
@@ -115,12 +130,32 @@ final class VideoRendererTests: XCTestCase {
     ) throws -> (r: UInt8, g: UInt8, b: UInt8) {
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
-        let base = try XCTUnwrap(CVPixelBufferGetBaseAddress(buffer))
-        let stride = CVPixelBufferGetBytesPerRow(buffer)
+
         let x = Int(CGFloat(CVPixelBufferGetWidth(buffer) - 1) * xFraction)
         let y = Int(CGFloat(CVPixelBufferGetHeight(buffer) - 1) * yFraction)
-        let pixel = base.advanced(by: y * stride + x * 4).assumingMemoryBound(to: UInt8.self)
-        return (r: pixel[2], g: pixel[1], b: pixel[0])
+
+        let lumaBase = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(buffer, 0))
+        let lumaStride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+        let luma = lumaBase.advanced(by: y * lumaStride + x)
+            .assumingMemoryBound(to: UInt8.self)[0]
+
+        let chromaBase = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(buffer, 1))
+        let chromaStride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 1)
+        let chroma = chromaBase.advanced(by: (y / 2) * chromaStride + (x / 2) * 2)
+            .assumingMemoryBound(to: UInt8.self)
+
+        let luminance = (Double(luma) - 16) / 219
+        let cb = (Double(chroma[0]) - 128) / 255
+        let cr = (Double(chroma[1]) - 128) / 255
+
+        func byte(_ value: Double) -> UInt8 {
+            UInt8(clamping: Int((min(max(value, 0), 1) * 255).rounded()))
+        }
+        return (
+            r: byte(luminance + 1.402 * cr),
+            g: byte(luminance - 0.344136 * cb - 0.714136 * cr),
+            b: byte(luminance + 1.772 * cb)
+        )
     }
 
     private func assertDominant(
@@ -209,5 +244,47 @@ final class VideoRendererTests: XCTestCase {
         let pixel = try sample(output, atX: 0.5, y: 0.5)
         XCTAssertGreaterThan(Int(pixel.g), 60, "half-opacity green should be visible")
         XCTAssertGreaterThan(Int(pixel.r), 60, "the red source should still show through")
+    }
+
+    func testOutputIsNV12SoTheSinkMovesAThirdOfTheBytes() throws {
+        let output = try render(
+            VideoRenderer.Frame(
+                pixelBuffer: try makeSourceBuffer(),
+                crop: CGRect(x: 0, y: 0, width: 1, height: 1),
+                mirror: false,
+                overlay: nil
+            )
+        )
+        XCTAssertEqual(
+            CVPixelBufferGetPixelFormatType(output),
+            kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        )
+        XCTAssertEqual(CVPixelBufferGetPlaneCount(output), 2)
+        // The chroma plane is subsampled 2x2; without that the format would cost
+        // as much as BGRA and the whole change would be pointless.
+        XCTAssertEqual(
+            CVPixelBufferGetHeightOfPlane(output, 1),
+            CVPixelBufferGetHeightOfPlane(output, 0) / 2
+        )
+    }
+
+    func testPreviewNeverRendersMorePixelsThanAreTransmitted() {
+        // A Retina-backed window would ask for far more than the output; a
+        // sharper preview than the transmitted frame both wastes bandwidth and
+        // hides the softness that a strong zoom introduces.
+        let capped = PreviewRenderTarget.drawableSize(
+            for: CGSize(width: 1244, height: 700),
+            scale: 2
+        )
+        XCTAssertEqual(capped.width, CGFloat(OpenLensOutput.width))
+        XCTAssertEqual(capped.height, CGFloat(OpenLensOutput.height))
+
+        // A small window stays at its natural size — no upscaling either.
+        let small = PreviewRenderTarget.drawableSize(
+            for: CGSize(width: 400, height: 225),
+            scale: 2
+        )
+        XCTAssertEqual(small.width, 800)
+        XCTAssertEqual(small.height, 450)
     }
 }

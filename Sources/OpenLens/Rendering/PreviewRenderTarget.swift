@@ -11,6 +11,7 @@ final class PreviewRenderTarget: @unchecked Sendable {
     private let layer: CAMetalLayer
     private let lock = NSLock()
     private var isEnabled = true
+    private var inFlight = 0
 
     init(layer: CAMetalLayer) {
         self.layer = layer
@@ -29,8 +30,19 @@ final class PreviewRenderTarget: @unchecked Sendable {
         layer.displaySyncEnabled = true
     }
 
-    func setDrawableSize(_ size: CGSize) {
-        lock.lock()
+    /// Caps the preview at the transmitted resolution.
+    ///
+    /// A Retina-sized drawable would make the preview *sharper* than the frame
+    /// everybody in the call receives, which hides exactly the softness a strong
+    /// zoom introduces — the one thing the preview exists to show. Rendering
+    /// 3.5 MPix to display 2.07 MPix also costs real GPU bandwidth per frame.
+    static func drawableSize(for boxSize: CGSize, scale: CGFloat) -> CGSize {
+        let requested = CGSize(width: boxSize.width * scale, height: boxSize.height * scale)
+        guard requested.width > CGFloat(OpenLensOutput.width) else { return requested }
+        return CGSize(width: OpenLensOutput.width, height: OpenLensOutput.height)
+    }
+
+    func setDrawableSize(_ size: CGSize) {        lock.lock()
         defer { lock.unlock() }
         guard size.width > 0, size.height > 0 else { return }
         if layer.drawableSize != size { layer.drawableSize = size }
@@ -42,10 +54,35 @@ final class PreviewRenderTarget: @unchecked Sendable {
         lock.unlock()
     }
 
-    func nextDrawable() -> CAMetalDrawable? {
+    /// Returns a drawable only when the previous preview frame has already been
+    /// presented.
+    ///
+    /// `nextDrawable()` blocks until the layer has a free drawable — and it is
+    /// called on the same thread that feeds the virtual camera. Blocking there
+    /// puts the preview, which nobody in the call can see, in the way of the
+    /// video everybody can. Skipping a preview frame instead costs nothing that
+    /// matters: the preview is a monitor, not the product.
+    func nextDrawableIfIdle() -> CAMetalDrawable? {
         lock.lock()
-        defer { lock.unlock() }
-        guard isEnabled, layer.device != nil else { return nil }
-        return layer.nextDrawable()
+        guard isEnabled, layer.device != nil, inFlight == 0 else {
+            lock.unlock()
+            return nil
+        }
+        inFlight += 1
+        lock.unlock()
+
+        guard let drawable = layer.nextDrawable() else {
+            lock.lock()
+            inFlight -= 1
+            lock.unlock()
+            return nil
+        }
+        return drawable
+    }
+
+    func drawablePresented() {
+        lock.lock()
+        inFlight = max(0, inFlight - 1)
+        lock.unlock()
     }
 }

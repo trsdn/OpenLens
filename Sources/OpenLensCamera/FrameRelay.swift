@@ -15,6 +15,7 @@ final class FrameRelay {
 
     private let queue = DispatchQueue(label: "com.trsdn.openlens.relay", qos: .userInteractive)
     private var idleTimer: DispatchSourceTimer?
+    private var isEmittingIdleFrames = true
     private var isStreaming = false
     private var lastAppFrameHostTime: UInt64 = 0
     private var formatDescription: CMFormatDescription?
@@ -77,8 +78,19 @@ final class FrameRelay {
     // MARK: - Idle placeholder
 
     private func startIdleTimer() {
+        isEmittingIdleFrames = true
+        scheduleIdleTimer(interval: 1.0 / Double(OpenLensOutput.frameRate))
+    }
+
+    /// While the app is feeding frames this timer has nothing to emit — it only
+    /// has to *notice* a stall, and `appFrameTimeout` gives it half a second to
+    /// do so. Waking a `userInteractive` queue 30 times a second to immediately
+    /// return keeps the CPU out of its idle states for no benefit, so the
+    /// watchdog drops to 10 Hz and only winds back up once it actually has a
+    /// placeholder to send.
+    private func scheduleIdleTimer(interval: Double) {
+        idleTimer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        let interval = 1.0 / Double(OpenLensOutput.frameRate)
         timer.schedule(deadline: .now(), repeating: interval, leeway: .milliseconds(2))
         timer.setEventHandler { [weak self] in self?.emitIdleFrameIfNeeded() }
         timer.resume()
@@ -93,11 +105,22 @@ final class FrameRelay {
     private func emitIdleFrameIfNeeded() {
         let now = FrameRelay.hostTimeNanos()
         if lastAppFrameHostTime != 0, now &- lastAppFrameHostTime < appFrameTimeout {
+            if isEmittingIdleFrames {
+                isEmittingIdleFrames = false
+                scheduleIdleTimer(interval: FrameRelay.watchdogInterval)
+            }
+            return
+        }
+        if !isEmittingIdleFrames {
+            isEmittingIdleFrames = true
+            scheduleIdleTimer(interval: 1.0 / Double(OpenLensOutput.frameRate))
             return
         }
         guard let idlePixelBuffer else { return }
         send(idlePixelBuffer, hostTimeNanos: now)
     }
+
+    static let watchdogInterval = 0.1
 
     // MARK: - Sending
 

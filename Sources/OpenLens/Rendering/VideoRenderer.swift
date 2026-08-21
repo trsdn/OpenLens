@@ -25,6 +25,19 @@ final class VideoRenderer {
     private let commandQueue: MTLCommandQueue
     private let biplanarPipeline: MTLRenderPipelineState
     private let bgraPipeline: MTLRenderPipelineState
+
+    /// One pipeline per source layout; the NV12 output needs both planes.
+    private struct Planar {
+        let biplanar: MTLRenderPipelineState
+        let bgra: MTLRenderPipelineState
+
+        func pipeline(isBiplanarSource: Bool) -> MTLRenderPipelineState {
+            isBiplanarSource ? biplanar : bgra
+        }
+    }
+
+    private let lumaPipelines: Planar
+    private let chromaPipelines: Planar
     private let textureCache: CVMetalTextureCache
     private let blankOverlay: MTLTexture
 
@@ -58,11 +71,12 @@ final class VideoRenderer {
             throw RendererError.libraryUnavailable
         }
 
-        func makePipeline(fragment: String) throws -> MTLRenderPipelineState {
+        func makePipeline(fragment: String, format: MTLPixelFormat = .bgra8Unorm) throws
+            -> MTLRenderPipelineState {
             let descriptor = MTLRenderPipelineDescriptor()
             descriptor.vertexFunction = library.makeFunction(name: "openlens_vertex")
             descriptor.fragmentFunction = library.makeFunction(name: fragment)
-            descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+            descriptor.colorAttachments[0].pixelFormat = format
             guard descriptor.vertexFunction != nil, descriptor.fragmentFunction != nil else {
                 throw RendererError.pipelineCreationFailed
             }
@@ -71,6 +85,20 @@ final class VideoRenderer {
 
         biplanarPipeline = try makePipeline(fragment: "openlens_fragment_biplanar")
         bgraPipeline = try makePipeline(fragment: "openlens_fragment_bgra")
+        lumaPipelines = Planar(
+            biplanar: try makePipeline(
+                fragment: "openlens_fragment_luma_biplanar",
+                format: .r8Unorm
+            ),
+            bgra: try makePipeline(fragment: "openlens_fragment_luma_bgra", format: .r8Unorm)
+        )
+        chromaPipelines = Planar(
+            biplanar: try makePipeline(
+                fragment: "openlens_fragment_chroma_biplanar",
+                format: .rg8Unorm
+            ),
+            bgra: try makePipeline(fragment: "openlens_fragment_chroma_bgra", format: .rg8Unorm)
+        )
 
         var cache: CVMetalTextureCache?
         guard CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &cache)
@@ -108,37 +136,92 @@ final class VideoRenderer {
         var overlay: OverlayTexture?
     }
 
-    /// Renders into a pooled output buffer destined for the virtual camera.
+    /// Renders into a pooled NV12 buffer destined for the virtual camera.
     func renderToOutputBuffer(_ frame: Frame) -> CVPixelBuffer? {
         let size = CGSize(width: OpenLensOutput.width, height: OpenLensOutput.height)
         guard let pool = pool(for: size) else { return nil }
 
         var output: CVPixelBuffer?
-        guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &output)
-                == kCVReturnSuccess,
+        // Fail the allocation rather than growing the pool without bound. If the
+        // extension ever stops draining, dropping this frame is the right answer;
+        // queueing more of them only adds latency and memory.
+        let auxAttributes: [CFString: Any] = [kCVPixelBufferPoolAllocationThresholdKey: 6]
+        guard CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(
+                kCFAllocatorDefault,
+                pool,
+                auxAttributes as CFDictionary,
+                &output
+              ) == kCVReturnSuccess,
               let output,
-              let destination = makeTexture(from: output, plane: 0, format: .bgra8Unorm)
+              let luma = makeTexture(from: output, plane: 0, format: .r8Unorm),
+              let chroma = makeTexture(from: output, plane: 1, format: .rg8Unorm)
         else { return nil }
 
-        guard encode(frame, into: destination, present: nil) else { return nil }
+        let isBiplanar = Self.isBiplanar(frame.pixelBuffer)
+        // Both planes go into one command buffer: the source textures, uniforms
+        // and GPU submission are shared, so the second plane costs little beyond
+        // its own (quarter-size) fragment work.
+        let passes = [
+            Pass(pipeline: lumaPipelines.pipeline(isBiplanarSource: isBiplanar), texture: luma),
+            Pass(pipeline: chromaPipelines.pipeline(isBiplanarSource: isBiplanar), texture: chroma)
+        ]
+        guard encode(frame, passes: passes, present: nil) else { return nil }
+
+        // The tagging has to describe what the shader actually wrote, or every
+        // consumer will decode the picture with the wrong matrix.
+        CVBufferSetAttachment(
+            output, kCVImageBufferYCbCrMatrixKey,
+            kCVImageBufferYCbCrMatrix_ITU_R_601_4, .shouldPropagate
+        )
+        CVBufferSetAttachment(
+            output, kCVImageBufferColorPrimariesKey,
+            kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate
+        )
+        CVBufferSetAttachment(
+            output, kCVImageBufferTransferFunctionKey,
+            kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate
+        )
         return output
     }
 
     /// Renders straight into a `CAMetalLayer` drawable for the preview.
-    func renderToDrawable(_ frame: Frame, drawable: CAMetalDrawable) {
-        _ = encode(frame, into: drawable.texture, present: drawable)
+    ///
+    /// `completion` fires once the frame has been presented, which is what lets
+    /// the caller keep exactly one preview render in flight instead of blocking
+    /// on `nextDrawable()`.
+    func renderToDrawable(
+        _ frame: Frame,
+        drawable: CAMetalDrawable,
+        completion: @escaping @Sendable () -> Void
+    ) {
+        let pipeline = Self.isBiplanar(frame.pixelBuffer) ? biplanarPipeline : bgraPipeline
+        let pass = Pass(pipeline: pipeline, texture: drawable.texture)
+        if !encode(frame, passes: [pass], present: drawable, completion: completion) {
+            completion()
+        }
     }
 
     // MARK: - Encoding
 
+    private struct Pass {
+        let pipeline: MTLRenderPipelineState
+        let texture: MTLTexture
+    }
+
+    private static func isBiplanar(_ pixelBuffer: CVPixelBuffer) -> Bool {
+        let format = CVPixelBufferGetPixelFormatType(pixelBuffer)
+        return format == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+            || format == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+    }
+
     private func encode(
         _ frame: Frame,
-        into destination: MTLTexture,
-        present drawable: CAMetalDrawable?
+        passes: [Pass],
+        present drawable: CAMetalDrawable?,
+        completion: (@Sendable () -> Void)? = nil
     ) -> Bool {
         let pixelFormat = CVPixelBufferGetPixelFormatType(frame.pixelBuffer)
-        let isBiplanar = pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
-            || pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+        let isBiplanar = Self.isBiplanar(frame.pixelBuffer)
 
         var sourceTextures: [MTLTexture] = []
         if isBiplanar {
@@ -152,14 +235,7 @@ final class VideoRenderer {
             sourceTextures = [bgra]
         }
 
-        let descriptor = MTLRenderPassDescriptor()
-        descriptor.colorAttachments[0].texture = destination
-        descriptor.colorAttachments[0].loadAction = .dontCare
-        descriptor.colorAttachments[0].storeAction = .store
-
-        guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)
-        else { return false }
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return false }
 
         // Video range needs the 16...235 luma window expanded; full range does not.
         let isFullRange = pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
@@ -184,23 +260,42 @@ final class VideoRenderer {
             lumaScale: isFullRange ? 1.0 : 255.0 / 219.0
         )
 
-        encoder.setRenderPipelineState(isBiplanar ? biplanarPipeline : bgraPipeline)
-        for (index, texture) in sourceTextures.enumerated() {
-            encoder.setFragmentTexture(texture, index: index)
+        for pass in passes {
+            let descriptor = MTLRenderPassDescriptor()
+            descriptor.colorAttachments[0].texture = pass.texture
+            descriptor.colorAttachments[0].loadAction = .dontCare
+            descriptor.colorAttachments[0].storeAction = .store
+
+            guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)
+            else { return false }
+
+            encoder.setRenderPipelineState(pass.pipeline)
+            for (index, texture) in sourceTextures.enumerated() {
+                encoder.setFragmentTexture(texture, index: index)
+            }
+            encoder.setFragmentTexture(frame.overlay?.texture ?? blankOverlay, index: 2)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<RenderUniforms>.stride, index: 0)
+            encoder.setFragmentBytes(
+                &uniforms, length: MemoryLayout<RenderUniforms>.stride, index: 0
+            )
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+            encoder.endEncoding()
         }
-        encoder.setFragmentTexture(frame.overlay?.texture ?? blankOverlay, index: 2)
-        encoder.setVertexBytes(&uniforms, length: MemoryLayout<RenderUniforms>.stride, index: 0)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<RenderUniforms>.stride, index: 0)
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-        encoder.endEncoding()
 
         if let drawable { commandBuffer.present(drawable) }
 
         let retained = inFlightTextures
-        commandBuffer.addCompletedHandler { _ in _ = retained }
+        commandBuffer.addCompletedHandler { _ in
+            _ = retained
+            completion?()
+        }
         inFlightTextures.removeAll(keepingCapacity: true)
 
         commandBuffer.commit()
+        // The cache holds a reference to every texture it hands out; without a
+        // periodic flush the IOSurfaces behind them are never released back to
+        // the capture device's pool.
+        flushTextureCache()
         return true
     }
 
@@ -240,7 +335,7 @@ final class VideoRenderer {
         if let outputPool, outputPoolSize == size { return outputPool }
 
         let attributes: [CFString: Any] = [
-            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferPixelFormatTypeKey: OpenLensOutput.pixelFormat,
             kCVPixelBufferWidthKey: Int(size.width),
             kCVPixelBufferHeightKey: Int(size.height),
             kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,

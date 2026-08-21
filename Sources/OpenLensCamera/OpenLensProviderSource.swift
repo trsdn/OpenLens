@@ -58,7 +58,7 @@ final class OpenLensDeviceSource: NSObject, CMIOExtensionDeviceSource {
         var formatDescription: CMFormatDescription?
         CMVideoFormatDescriptionCreate(
             allocator: kCFAllocatorDefault,
-            codecType: kCVPixelFormatType_32BGRA,
+            codecType: OpenLensOutput.pixelFormat,
             width: Int32(OpenLensOutput.width),
             height: Int32(OpenLensOutput.height),
             extensions: nil,

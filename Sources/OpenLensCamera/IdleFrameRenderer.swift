@@ -10,6 +10,11 @@ import Foundation
 /// `stream.send`.
 enum IdleFrameRenderer {
     static func makePlaceholder() -> CVPixelBuffer? {
+        guard let bgra = drawCard() else { return nil }
+        return convertToNV12(bgra)
+    }
+
+    private static func drawCard() -> CVPixelBuffer? {
         let width = OpenLensOutput.width
         let height = OpenLensOutput.height
 
@@ -71,6 +76,94 @@ enum IdleFrameRenderer {
         )
 
         return pixelBuffer
+    }
+
+    /// Converts the card to the stream's NV12 layout.
+    ///
+    /// This runs once at launch, so a plain loop is clearer than pulling in an
+    /// accelerated path for a single frame. The coefficients are BT.601 video
+    /// range, matching what the app's shader writes, so the placeholder and live
+    /// video decode identically.
+    private static func convertToNV12(_ source: CVPixelBuffer) -> CVPixelBuffer? {
+        let width = CVPixelBufferGetWidth(source)
+        let height = CVPixelBufferGetHeight(source)
+
+        let attributes: [CFString: Any] = [
+            kCVPixelBufferPixelFormatTypeKey: OpenLensOutput.pixelFormat,
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
+        ]
+        var destination: CVPixelBuffer?
+        guard CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            OpenLensOutput.pixelFormat,
+            attributes as CFDictionary,
+            &destination
+        ) == kCVReturnSuccess, let destination else { return nil }
+
+        CVPixelBufferLockBaseAddress(source, .readOnly)
+        CVPixelBufferLockBaseAddress(destination, [])
+        defer {
+            CVPixelBufferUnlockBaseAddress(destination, [])
+            CVPixelBufferUnlockBaseAddress(source, .readOnly)
+        }
+
+        guard let src = CVPixelBufferGetBaseAddress(source)?.assumingMemoryBound(to: UInt8.self),
+              let lumaPlane = CVPixelBufferGetBaseAddressOfPlane(destination, 0)?
+                  .assumingMemoryBound(to: UInt8.self),
+              let chromaPlane = CVPixelBufferGetBaseAddressOfPlane(destination, 1)?
+                  .assumingMemoryBound(to: UInt8.self)
+        else { return nil }
+
+        let srcStride = CVPixelBufferGetBytesPerRow(source)
+        let lumaStride = CVPixelBufferGetBytesPerRowOfPlane(destination, 0)
+        let chromaStride = CVPixelBufferGetBytesPerRowOfPlane(destination, 1)
+
+        // BGRA in memory little-endian: byte 0 = blue, 1 = green, 2 = red.
+        func luma(_ r: Double, _ g: Double, _ b: Double) -> Double {
+            0.299 * r + 0.587 * g + 0.114 * b
+        }
+
+        for y in 0..<height {
+            let srcRow = src + y * srcStride
+            let lumaRow = lumaPlane + y * lumaStride
+            for x in 0..<width {
+                let pixel = srcRow + x * 4
+                let blue = Double(pixel[0]) / 255
+                let green = Double(pixel[1]) / 255
+                let red = Double(pixel[2]) / 255
+                lumaRow[x] = UInt8(clamping: Int((luma(red, green, blue) * 219 + 16).rounded()))
+            }
+        }
+
+        for y in stride(from: 0, to: height, by: 2) {
+            let chromaRow = chromaPlane + (y / 2) * chromaStride
+            for x in stride(from: 0, to: width, by: 2) {
+                var red = 0.0, green = 0.0, blue = 0.0
+                for dy in 0..<2 where y + dy < height {
+                    let srcRow = src + (y + dy) * srcStride
+                    for dx in 0..<2 where x + dx < width {
+                        let pixel = srcRow + (x + dx) * 4
+                        blue += Double(pixel[0]) / 255
+                        green += Double(pixel[1]) / 255
+                        red += Double(pixel[2]) / 255
+                    }
+                }
+                red /= 4; green /= 4; blue /= 4
+                let y01 = luma(red, green, blue)
+                let cb = (blue - y01) / 1.772 * 255 + 128
+                let cr = (red - y01) / 1.402 * 255 + 128
+                chromaRow[x] = UInt8(clamping: Int(cb.rounded()))
+                chromaRow[x + 1] = UInt8(clamping: Int(cr.rounded()))
+            }
+        }
+
+        CVBufferSetAttachment(
+            destination, kCVImageBufferYCbCrMatrixKey,
+            kCVImageBufferYCbCrMatrix_ITU_R_601_4, .shouldPropagate
+        )
+        return destination
     }
 
     private static func draw(

@@ -58,7 +58,7 @@ final class MetalPreviewView: NSView {
         metalLayer.frame = box
         CATransaction.commit()
         renderTarget.setDrawableSize(
-            CGSize(width: box.width * scale, height: box.height * scale)
+            PreviewRenderTarget.drawableSize(for: box.size, scale: scale)
         )
     }
 

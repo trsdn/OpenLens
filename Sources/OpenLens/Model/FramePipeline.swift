@@ -145,8 +145,10 @@ final class FramePipeline: NSObject, @unchecked Sendable {
             )
         }
 
-        if snapshot.wantsPreview, let drawable = preview?.nextDrawable() {
-            renderer.renderToDrawable(frame, drawable: drawable)
+        if snapshot.wantsPreview, let preview, let drawable = preview.nextDrawableIfIdle() {
+            renderer.renderToDrawable(frame, drawable: drawable) {
+                preview.drawablePresented()
+            }
         }
 
         if now - lastActivityReport > 1 {

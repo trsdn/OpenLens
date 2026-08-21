@@ -1,3 +1,4 @@
+import CoreVideo
 import Foundation
 
 /// Identifiers shared between the app and the camera system extension.
@@ -30,4 +31,12 @@ public enum OpenLensOutput {
     public static let height = 1080
     public static let frameRate = 30
     public static var aspectRatio: Double { Double(width) / Double(height) }
+
+    /// NV12, the format conferencing apps hand straight to their H.264 encoder.
+    ///
+    /// A 1080p frame is 3.11 MB here against 8.29 MB as BGRA. At 30 fps that is
+    /// 93 MB/s instead of 249 MB/s through the sink queue, CoreMediaIO's copy
+    /// into the consumer, and the encoder's own input stage. Cameras also deliver
+    /// this layout natively, so the whole pipeline stays in one colour space.
+    public static let pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
 }
