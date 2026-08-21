@@ -22,8 +22,8 @@ enum CaptureQuality: String, Codable, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .matchOutput: return "Match output (1080p)"
-        case .losslessZoom: return "High (up to 4K, lossless zoom)"
+        case .matchOutput: return "1080p (lowest CPU)"
+        case .losslessZoom: return "Up to 4K (sharp zoom)"
         }
     }
 }

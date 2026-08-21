@@ -16,7 +16,7 @@ not touch audio, and has no timeline, no projects and no accounts.
 
 - **Zoom and pan into any area of the frame.** Scroll or pinch over the picture
   to zoom around the pointer, drag to pan, double-click to reset. The inspector
-  has a slider, an editable number field and **⌘+ / ⌘− / ⌘0**, all moving in
+  has a slider, an editable number field, a stepper and **⌘+ / ⌘− / ⌘0**, all moving in
   steps of 0.1×, if you would rather not aim with the mouse. The crop is a
   texture-coordinate remap inside a single Metal pass, so it costs nothing.
 - **Sharp zoom.** Capture above 1080p and the crop still fills the 1080p output

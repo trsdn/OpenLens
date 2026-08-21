@@ -55,44 +55,40 @@ struct InspectorView: View {
             }
 
             Section {
-                // One control, one place. The number is editable so an exact value
-                // can be typed; the slider and the buttons move in 0.1 steps.
-                HStack(spacing: 8) {
-                    TextField(
-                        "",
-                        value: Binding(
-                            get: { Double(model.effectiveZoom) },
-                            set: { model.setZoom(CGFloat($0)) }
-                        ),
-                        format: .number.precision(.fractionLength(1))
-                    )
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 46)
-                    Text("×").foregroundStyle(.secondary)
-
-                    Button {
-                        model.zoomOut()
-                    } label: {
-                        Image(systemName: "minus")
+                // Two rows, not one: the inspector is only ~240pt wide, and a
+                // slider sharing a row with a text field and two buttons collapses
+                // to a stub you cannot aim at.
+                LabeledContent("Level") {
+                    HStack(spacing: 4) {
+                        TextField(
+                            "",
+                            value: Binding(
+                                get: { Double(model.effectiveZoom) },
+                                set: { model.setZoom(CGFloat($0)) }
+                            ),
+                            format: .number.precision(.fractionLength(1))
+                        )
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 44)
+                        Text("×").foregroundStyle(.secondary)
+                        Stepper("Zoom") {
+                            model.zoomIn()
+                        } onDecrement: {
+                            model.zoomOut()
+                        }
+                        .labelsHidden()
                     }
-                    .disabled(model.effectiveZoom <= CropGeometry.minZoom + 0.001)
-
-                    Slider(
-                        value: Binding(
-                            get: { model.effectiveZoom },
-                            set: { model.setZoom($0) }
-                        ),
-                        in: CropGeometry.minZoom...CropGeometry.maxZoom,
-                        step: AppModel.zoomStep
-                    )
-
-                    Button {
-                        model.zoomIn()
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .disabled(model.effectiveZoom >= CropGeometry.maxZoom - 0.001)
                 }
+
+                Slider(
+                    value: Binding(
+                        get: { model.effectiveZoom },
+                        set: { model.setZoom($0) }
+                    ),
+                    in: CropGeometry.minZoom...CropGeometry.maxZoom,
+                    step: AppModel.zoomStep
+                )
+                .accessibilityLabel("Zoom")
 
                 LabeledContent("Stays sharp up to") {
                     Text(String(format: "%.1f×", model.losslessZoomLimit)).monospacedDigit()
@@ -101,7 +97,7 @@ struct InspectorView: View {
             } header: {
                 SectionHeader(
                     "Zoom",
-                    info: "The slider and the -/+ buttons move in steps of 0.1×. Type in the "
+                    info: "The slider and the stepper move in steps of 0.1×. Type in the "
                         + "field for an exact value, or scroll and pinch over the picture for "
                         + "continuous zoom around the pointer — dragging then pans.\n\n"
                         + "\"Stays sharp up to\" is the point where the crop has used up every "
@@ -123,7 +119,7 @@ struct InspectorView: View {
                 )
             }
 
-            Section("Overlay") {
+            Section {
                 Toggle("Show overlay", isOn: overlayEnabledBinding)
                     .disabled(scenes.overlayURL == nil)
 
@@ -148,6 +144,14 @@ struct InspectorView: View {
                     }
                     OverlayPlacementControls(model: model)
                 }
+            } header: {
+                SectionHeader(
+                    "Overlay",
+                    info: "A PNG with transparency composited on top of the picture in the "
+                        + "same GPU pass, so it is free. Use it for a logo or a lower third. "
+                        + "Placement is a nine-position grid rather than dragging, because "
+                        + "dragging in the picture already pans the crop."
+                )
             }
         }
         .formStyle(.grouped)
