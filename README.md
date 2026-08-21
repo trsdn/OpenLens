@@ -29,6 +29,10 @@ not touch audio, and has no timeline, no projects and no accounts.
   so it works while you are in a call.
 - **PNG overlay with alpha,** placed on a nine-position grid with an opacity
   slider and composited in the same GPU pass.
+- **Exposure, contrast, white balance and saturation** for cameras that have no
+  controls of their own — HDMI grabbers like a Cam Link expose none, and macOS
+  offers no manual values either. Four sliders, folded into the render pass that
+  already runs, so they cost nothing measurable.
 - **Cheap.** Around 17 % of a single core — roughly 1.4 % of an M4 Pro — at
   1080p30 while a conferencing app is actually pulling frames. The capture
   session does not run at all when nobody is looking, and the preview pass is
@@ -120,6 +124,24 @@ Three AVFoundation traps sit between asking for 4K and getting it, all found the
   device actually published. Missing this ran "1080p" at 60 fps, which made the
   supposedly cheap mode cost **13.2 %** of a core against 4K's 5 %; pinned properly it
   is 8 %, and the capture path alone drops from 4.3 % to 1.3 %.
+
+### Colour correction is free
+
+Exposure, contrast, white balance and saturation happen inside the fragment shader that
+already runs, so they cost no extra pass, no extra buffer and no extra CPU work. Measured
+over two 60-second windows at 1080p30 with the preview visible: **7.52 %** and **7.63 %**
+of one core, against **7.97 %** for the same build without the colour code — a difference
+inside the noise.
+
+The shader is deliberately **branchless**: the coefficients are computed once on the CPU
+when a slider moves, and the per-pixel maths runs identically whether the sliders sit at
+neutral or at their extremes. There is no "off" fast path to fall back to, which also
+means neutral settings are already the worst case for measurement.
+
+This is why the correction lives here at all. A Cam Link is an HDMI grabber, not a camera —
+it exposes no exposure or white-balance controls, and macOS `AVCaptureDevice` offers no
+manual values on macOS either. The render pass is the only place left, and it happens to
+be the cheapest one.
 
 ## Install
 

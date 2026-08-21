@@ -12,6 +12,10 @@ struct RenderUniforms {
     var mirror: Float
     var lumaOffset: Float
     var lumaScale: Float
+    var exposureGain: Float
+    var contrastGain: Float
+    var saturationGain: Float
+    var temperatureShift: Float
 }
 
 /// The whole image pipeline: one Metal pass that crops, scales and composites.
@@ -134,6 +138,7 @@ final class VideoRenderer {
         var crop: CGRect
         var mirror: Bool
         var overlay: OverlayTexture?
+        var adjustments: ImageAdjustments = .neutral
     }
 
     /// Renders into a pooled NV12 buffer destined for the virtual camera.
@@ -178,6 +183,18 @@ final class VideoRenderer {
             kCVImageBufferYCbCrMatrix_ITU_R_601_4, .shouldPropagate
         )
         return output
+    }
+
+    /// Blocks until everything submitted so far has finished on the GPU.
+    ///
+    /// Command buffers on a single queue complete in order, so an empty one
+    /// submitted last is a barrier. This exists for tests, which have to read an
+    /// output surface back and would otherwise race the GPU; the live path never
+    /// waits, which is the whole point of handing the buffer straight on.
+    func waitUntilIdle() {
+        let barrier = commandQueue.makeCommandBuffer()
+        barrier?.commit()
+        barrier?.waitUntilCompleted()
     }
 
     /// Renders straight into a `CAMetalLayer` drawable for the preview.
@@ -253,7 +270,11 @@ final class VideoRenderer {
             overlayOpacity: Float(frame.overlay?.opacity ?? 0),
             mirror: frame.mirror ? 1 : 0,
             lumaOffset: isFullRange ? 0.0 : 16.0 / 255.0,
-            lumaScale: isFullRange ? 1.0 : 255.0 / 219.0
+            lumaScale: isFullRange ? 1.0 : 255.0 / 219.0,
+            exposureGain: Float(frame.adjustments.exposureGain),
+            contrastGain: Float(frame.adjustments.contrastGain),
+            saturationGain: Float(frame.adjustments.saturationGain),
+            temperatureShift: Float(frame.adjustments.temperatureShift)
         )
 
         for pass in passes {

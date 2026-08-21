@@ -68,6 +68,10 @@ targets:
       - path: Tests/OpenLensTests
       - path: Sources/OpenLensShared
       - path: Sources/OpenLens/Rendering
+      # Pulled in individually so the scene format has real test coverage:
+      # a decoding regression there silently discards every saved scene.
+      - path: Sources/OpenLens/Model/CameraScene.swift
+      - path: Sources/OpenLens/Capture/CaptureEngine.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.trsdn.openlens.tests

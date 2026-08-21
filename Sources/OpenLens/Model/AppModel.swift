@@ -178,6 +178,7 @@ final class AppModel: ObservableObject {
             $0.overlayEnabled = scene.overlayEnabled
             $0.overlayRect = scene.overlayRect
             $0.overlayOpacity = scene.overlayOpacity
+            $0.adjustments = scene.adjustments
         }
         // Gliding a crop across a camera change looks like a glitch, so only
         // scenes on the same camera animate.
@@ -375,6 +376,27 @@ final class AppModel: ObservableObject {
     func setOverlayOpacity(_ opacity: Double) {
         scenes.mutateSelected { $0.overlayOpacity = opacity }
         pipeline?.update { $0.overlayOpacity = opacity }
+    }
+
+    // MARK: - Image adjustments
+
+    var adjustments: ImageAdjustments { scenes.selectedScene?.adjustments ?? .neutral }
+
+    /// Called continuously while a slider is dragged: the pipeline is updated
+    /// every time, but the write to disk is deferred to `commitAdjustments` so a
+    /// drag does not serialise every scene sixty times a second.
+    func setAdjustments(_ adjustments: ImageAdjustments) {
+        scenes.mutateSelected { $0.adjustments = adjustments }
+        pipeline?.update { $0.adjustments = adjustments }
+    }
+
+    func commitAdjustments() {
+        scenes.save()
+    }
+
+    func resetAdjustments() {
+        setAdjustments(.neutral)
+        commitAdjustments()
     }
 
     private func reloadOverlay() {

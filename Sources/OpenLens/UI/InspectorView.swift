@@ -119,6 +119,57 @@ struct InspectorView: View {
             }
 
             Section {
+                AdjustmentSlider(
+                    title: "Exposure",
+                    value: adjustmentBinding(\.exposure),
+                    range: ImageAdjustments.exposureRange,
+                    onCommit: { model.commitAdjustments() },
+                    format: { $0 == 0 ? "0 EV" : String(format: "%+.1f EV", $0) }
+                )
+                AdjustmentSlider(
+                    title: "Contrast",
+                    value: adjustmentBinding(\.contrast),
+                    range: ImageAdjustments.unitRange,
+                    onCommit: { model.commitAdjustments() },
+                    format: Self.percentage
+                )
+                AdjustmentSlider(
+                    title: "White balance",
+                    value: adjustmentBinding(\.temperature),
+                    range: ImageAdjustments.unitRange,
+                    onCommit: { model.commitAdjustments() },
+                    format: { value in
+                        guard value != 0 else { return "Neutral" }
+                        return String(
+                            format: "%+.0f%% %@", value * 100, value > 0 ? "warm" : "cool"
+                        )
+                    }
+                )
+                AdjustmentSlider(
+                    title: "Saturation",
+                    value: adjustmentBinding(\.saturation),
+                    range: ImageAdjustments.unitRange,
+                    onCommit: { model.commitAdjustments() },
+                    format: Self.percentage
+                )
+
+                Button("Reset to neutral") { model.resetAdjustments() }
+                    .disabled(model.adjustments.isNeutral)
+            } header: {
+                SectionHeader(
+                    "Colour",
+                    info: "macOS exposes no exposure or white balance control for a capture "
+                        + "device, so these are applied to the picture itself rather than to "
+                        + "the camera. They ride along in the GPU pass that already crops "
+                        + "every frame, which is why they cost nothing measurable.\n\n"
+                        + "Correct at the camera first where you can — this cannot recover "
+                        + "detail that was never captured. It is here to match a second "
+                        + "camera to your main one, or to rescue a room whose light you "
+                        + "cannot change. Each scene keeps its own settings."
+                )
+            }
+
+            Section {
                 Toggle("Show preview", isOn: $model.previewEnabled)
             } header: {
                 SectionHeader(
@@ -182,6 +233,23 @@ struct InspectorView: View {
 
     // MARK: - Bindings
 
+    private static let percentage: (Double) -> String = { value in
+        value == 0 ? "Neutral" : String(format: "%+.0f%%", value * 100)
+    }
+
+    private func adjustmentBinding(
+        _ keyPath: WritableKeyPath<ImageAdjustments, Double>
+    ) -> Binding<Double> {
+        Binding(
+            get: { model.adjustments[keyPath: keyPath] },
+            set: { newValue in
+                var updated = model.adjustments
+                updated[keyPath: keyPath] = newValue
+                model.setAdjustments(updated)
+            }
+        )
+    }
+
     private var deviceBinding: Binding<String> {
         Binding(
             get: { scenes.selectedScene?.deviceID ?? "" },
@@ -218,6 +286,39 @@ struct InspectorView: View {
             get: { scenes.selectedScene?.overlayOpacity ?? 1 },
             set: { model.setOverlayOpacity($0) }
         )
+    }
+}
+
+/// A slider that is neutral in the middle, with the current value spelled out
+/// above it.
+///
+/// Two rows rather than one: the inspector is only ~240pt wide, and a slider
+/// sharing a row with a label and a readout collapses to a stub you cannot aim
+/// at. The write to disk is deferred to the end of the drag via
+/// `onEditingChanged`, so dragging does not serialise the scene list on every
+/// frame.
+struct AdjustmentSlider: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let onCommit: () -> Void
+    let format: (Double) -> String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(format(value))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+            Slider(value: $value, in: range) { editing in
+                if !editing { onCommit() }
+            }
+            .accessibilityLabel(title)
+        }
     }
 }
 

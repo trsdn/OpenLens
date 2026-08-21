@@ -12,6 +12,12 @@ struct RenderUniforms {
     // Luma offset/scale for video-range vs full-range YCbCr.
     float  lumaOffset;
     float  lumaScale;
+    // Colour correction. Neutral is 1, 1, 1, 0 — see ImageAdjustments.swift,
+    // which precomputes these so the shader never calls pow().
+    float  exposureGain;
+    float  contrastGain;
+    float  saturationGain;
+    float  temperatureShift;
 };
 
 struct VertexOut {
@@ -113,6 +119,47 @@ static inline float2 rgb_to_chroma(float3 rgb)
     return float2((rgb.b - y) / 1.772, (rgb.r - y) / 1.402) + 0.5;
 }
 
+// MARK: - Colour correction
+//
+// Split along the same seam as the NV12 planes: exposure and contrast are
+// tonal and belong to luma, white balance and saturation are colour and belong
+// to chroma. Each shader therefore only pays for the half it already samples.
+//
+// Applied to the camera image *before* the overlay is composited, so a logo
+// keeps the colours it was authored in no matter how the picture is graded.
+
+/// `y` is full-range luma in 0...1, and the result is clamped so an
+/// overexposed pixel lands on legal white instead of overshooting into the
+/// superwhite range that video-range consumers do not expect.
+static inline float adjust_luma(float y, constant RenderUniforms &u)
+{
+    y *= u.exposureGain;
+    return saturate((y - 0.5) * u.contrastGain + 0.5);
+}
+
+/// Temperature is applied after saturation rather than before, so that pulling
+/// saturation to zero and then warming the image gives a tinted monochrome
+/// picture instead of a grey one.
+static inline float2 adjust_chroma(float2 chroma, constant RenderUniforms &u)
+{
+    float2 centred = (chroma - 0.5) * u.saturationGain;
+    // Warm means more red and less blue, which in YCbCr is Cr up and Cb down.
+    centred.x -= u.temperatureShift;
+    centred.y += u.temperatureShift;
+    return saturate(centred + 0.5);
+}
+
+/// The RGB equivalent, for sources that do not arrive as YCbCr.
+///
+/// Routing through luma/chroma rather than grading in RGB directly is what
+/// keeps a BGRA camera looking identical to a YCbCr one at the same settings.
+static inline float3 adjust_rgb(float3 rgb, constant RenderUniforms &u)
+{
+    float y = adjust_luma(rgb_to_luma(rgb), u);
+    float2 chroma = adjust_chroma(rgb_to_chroma(rgb), u);
+    return ycbcr_to_rgb(y, chroma, 0.0, 1.0);
+}
+
 // Alpha blending commutes with the YCbCr transform: because YCbCr = M*RGB + o
 // is affine, M(aA + (1-a)B) + o == a(MA + o) + (1-a)(MB + o). Compositing the
 // overlay per plane is therefore exactly equivalent to compositing it in RGB
@@ -125,7 +172,7 @@ fragment float openlens_fragment_luma_biplanar(VertexOut in [[stage_in]],
 {
     constexpr sampler videoSampler(filter::linear, mip_filter::none, address::clamp_to_edge);
     float luma = lumaTexture.sample(videoSampler, in.sourceCoord).r;
-    float y = encode_luma((luma - u.lumaOffset) * u.lumaScale);
+    float y = encode_luma(adjust_luma((luma - u.lumaOffset) * u.lumaScale, u));
 
     float4 texel = overlay_texel(in.outputCoord, overlayTexture, u);
     if (texel.a <= 0.0) { return y; }
@@ -139,7 +186,7 @@ fragment float2 openlens_fragment_chroma_biplanar(VertexOut in [[stage_in]],
                                                   constant RenderUniforms &u [[buffer(0)]])
 {
     constexpr sampler videoSampler(filter::linear, mip_filter::none, address::clamp_to_edge);
-    float2 chroma = chromaTexture.sample(videoSampler, in.sourceCoord).rg;
+    float2 chroma = adjust_chroma(chromaTexture.sample(videoSampler, in.sourceCoord).rg, u);
 
     float4 texel = overlay_texel(in.outputCoord, overlayTexture, u);
     if (texel.a <= 0.0) { return chroma; }
@@ -155,7 +202,7 @@ fragment float openlens_fragment_luma_bgra(VertexOut in [[stage_in]],
                                            constant RenderUniforms &u [[buffer(0)]])
 {
     constexpr sampler videoSampler(filter::linear, mip_filter::none, address::clamp_to_edge);
-    float3 rgb = sourceTexture.sample(videoSampler, in.sourceCoord).rgb;
+    float3 rgb = adjust_rgb(sourceTexture.sample(videoSampler, in.sourceCoord).rgb, u);
     rgb = composite_overlay(rgb, in.outputCoord, overlayTexture, u);
     return encode_luma(rgb_to_luma(saturate(rgb)));
 }
@@ -166,7 +213,7 @@ fragment float2 openlens_fragment_chroma_bgra(VertexOut in [[stage_in]],
                                               constant RenderUniforms &u [[buffer(0)]])
 {
     constexpr sampler videoSampler(filter::linear, mip_filter::none, address::clamp_to_edge);
-    float3 rgb = sourceTexture.sample(videoSampler, in.sourceCoord).rgb;
+    float3 rgb = adjust_rgb(sourceTexture.sample(videoSampler, in.sourceCoord).rgb, u);
     rgb = composite_overlay(rgb, in.outputCoord, overlayTexture, u);
     return rgb_to_chroma(saturate(rgb));
 }
@@ -180,7 +227,10 @@ fragment float4 openlens_fragment_biplanar(VertexOut in [[stage_in]],
     constexpr sampler videoSampler(filter::linear, mip_filter::none, address::clamp_to_edge);
     float luma = lumaTexture.sample(videoSampler, in.sourceCoord).r;
     float2 chroma = chromaTexture.sample(videoSampler, in.sourceCoord).rg;
-    float3 rgb = ycbcr_to_rgb(luma, chroma, u.lumaOffset, u.lumaScale);
+    // Graded in YCbCr and only then converted, exactly as the NV12 path does,
+    // so the preview is a faithful match for what the call actually receives.
+    float y = adjust_luma((luma - u.lumaOffset) * u.lumaScale, u);
+    float3 rgb = ycbcr_to_rgb(y, adjust_chroma(chroma, u), 0.0, 1.0);
     rgb = composite_overlay(rgb, in.outputCoord, overlayTexture, u);
     return float4(saturate(rgb), 1.0);
 }
@@ -191,7 +241,7 @@ fragment float4 openlens_fragment_bgra(VertexOut in [[stage_in]],
                                        constant RenderUniforms &u [[buffer(0)]])
 {
     constexpr sampler videoSampler(filter::linear, mip_filter::none, address::clamp_to_edge);
-    float3 rgb = sourceTexture.sample(videoSampler, in.sourceCoord).rgb;
+    float3 rgb = adjust_rgb(sourceTexture.sample(videoSampler, in.sourceCoord).rgb, u);
     rgb = composite_overlay(rgb, in.outputCoord, overlayTexture, u);
     return float4(saturate(rgb), 1.0);
 }

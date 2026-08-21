@@ -93,27 +93,12 @@ final class VideoRendererTests: XCTestCase {
     /// Renders and reads back, sampling at a fraction of the output size.
     private func render(_ frame: VideoRenderer.Frame) throws -> CVPixelBuffer {
         let output = try XCTUnwrap(renderer.renderToOutputBuffer(frame))
-        // The command buffer is committed but not waited on in the hot path, so
-        // the test has to give the GPU a moment before reading the surface.
-        let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline {
-            if !isBlank(output) { break }
-            Thread.sleep(forTimeInterval: 0.02)
-        }
+        // The hot path commits without waiting, so the test has to impose the
+        // barrier itself. Polling for "not blank any more" is not enough: the
+        // pool recycles surfaces, so a stale buffer looks finished immediately
+        // and the assertions quietly read the previous frame instead.
+        renderer.waitUntilIdle()
         return output
-    }
-
-    /// The pool hands back zeroed surfaces, so a luma of 0 means the GPU has not
-    /// written this buffer yet. Every test fixture renders a saturated colour,
-    /// none of which encodes to luma 0.
-    private func isBlank(_ buffer: CVPixelBuffer) -> Bool {
-        CVPixelBufferLockBaseAddress(buffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
-        guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return true }
-        let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
-        let y = CVPixelBufferGetHeight(buffer) / 2
-        let x = CVPixelBufferGetWidth(buffer) / 2
-        return base.advanced(by: y * stride + x).assumingMemoryBound(to: UInt8.self)[0] == 0
     }
 
     /// Reads back an NV12 pixel and decodes it to RGB.
@@ -286,5 +271,156 @@ final class VideoRendererTests: XCTestCase {
         )
         XCTAssertEqual(small.width, 800)
         XCTAssertEqual(small.height, 450)
+    }
+
+    // MARK: - Colour correction
+
+    /// The camera's own format, which the BGRA fixture above does not exercise:
+    /// every real source negotiates 4:2:0 biplanar, so the shaders that grade
+    /// luma and chroma separately are the ones that actually ship.
+    ///
+    /// Red on the left, blue on the right, encoded with the same BT.601
+    /// video-range constants the shader inverts.
+    private func makeBiplanarSourceBuffer() throws -> CVPixelBuffer {
+        let width = 1280
+        let height = 720
+        var buffer: CVPixelBuffer?
+        let attributes: [CFString: Any] = [
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
+            kCVPixelBufferMetalCompatibilityKey: true
+        ]
+        XCTAssertEqual(
+            CVPixelBufferCreate(
+                kCFAllocatorDefault,
+                width,
+                height,
+                kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                attributes as CFDictionary,
+                &buffer
+            ),
+            kCVReturnSuccess
+        )
+        let pixelBuffer = try XCTUnwrap(buffer)
+
+        CVPixelBufferLockBaseAddress(pixelBuffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
+
+        // Y = 0.299R + 0.587G + 0.114B, scaled into the 16...235 window.
+        func videoLuma(_ full: Double) -> UInt8 { UInt8((full * 219 + 16).rounded()) }
+        let redLuma = videoLuma(0.299)
+        let blueLuma = videoLuma(0.114)
+
+        let lumaBase = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0))
+        let lumaStride = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0)
+        for y in 0..<height {
+            let row = lumaBase.advanced(by: y * lumaStride).assumingMemoryBound(to: UInt8.self)
+            for x in 0..<width {
+                row[x] = x < width / 2 ? redLuma : blueLuma
+            }
+        }
+
+        func chroma(r: Double, g: Double, b: Double) -> (UInt8, UInt8) {
+            let y = 0.299 * r + 0.587 * g + 0.114 * b
+            let cb = (b - y) / 1.772 + 0.5
+            let cr = (r - y) / 1.402 + 0.5
+            return (UInt8((cb * 255).rounded()), UInt8((cr * 255).rounded()))
+        }
+        let red = chroma(r: 1, g: 0, b: 0)
+        let blue = chroma(r: 0, g: 0, b: 1)
+
+        let chromaBase = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 1))
+        let chromaStride = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 1)
+        for y in 0..<(height / 2) {
+            let row = chromaBase.advanced(by: y * chromaStride)
+                .assumingMemoryBound(to: UInt8.self)
+            for x in 0..<(width / 2) {
+                let value = x < width / 4 ? red : blue
+                row[x * 2] = value.0
+                row[x * 2 + 1] = value.1
+            }
+        }
+        return pixelBuffer
+    }
+
+    private func fullFrame(
+        _ pixelBuffer: CVPixelBuffer,
+        _ adjustments: ImageAdjustments
+    ) -> VideoRenderer.Frame {
+        VideoRenderer.Frame(
+            pixelBuffer: pixelBuffer,
+            crop: CGRect(x: 0, y: 0, width: 1, height: 1),
+            mirror: false,
+            overlay: nil,
+            adjustments: adjustments
+        )
+    }
+
+    /// The most important property of the whole feature: with every slider
+    /// centred the extra arithmetic must be a bit-exact no-op, otherwise simply
+    /// shipping colour correction would change how everyone already looks.
+    func testNeutralAdjustmentsLeaveTheBiplanarPictureUntouched() throws {
+        let graded = try render(fullFrame(try makeBiplanarSourceBuffer(), .neutral))
+        assertDominant(\.x, try sample(graded, atX: 0.1, y: 0.5))
+        assertDominant(\.z, try sample(graded, atX: 0.9, y: 0.5))
+    }
+
+    func testExposureBrightensAndDarkensTheBiplanarPath() throws {
+        let neutral = try luma(of: try render(fullFrame(try makeBiplanarSourceBuffer(), .neutral)))
+        let brighter = try luma(
+            of: try render(fullFrame(try makeBiplanarSourceBuffer(),
+                                     ImageAdjustments(exposure: 1)))
+        )
+        let darker = try luma(
+            of: try render(fullFrame(try makeBiplanarSourceBuffer(),
+                                     ImageAdjustments(exposure: -1)))
+        )
+        XCTAssertGreaterThan(brighter, neutral + 10)
+        XCTAssertLessThan(darker, neutral - 10)
+    }
+
+    func testFullyDesaturatingRemovesColour() throws {
+        let output = try render(
+            fullFrame(try makeBiplanarSourceBuffer(), ImageAdjustments(saturation: -1))
+        )
+        // The red half must come back as a neutral grey of the same brightness.
+        let pixel = try sample(output, atX: 0.1, y: 0.5)
+        let spread = Int(max(pixel.r, max(pixel.g, pixel.b)))
+            - Int(min(pixel.r, min(pixel.g, pixel.b)))
+        XCTAssertLessThan(spread, 12, "expected a grey pixel, got \(pixel)")
+    }
+
+    func testWhiteBalanceShiftsTowardsRedAndBlue() throws {
+        let warm = try sample(
+            try render(fullFrame(try makeBiplanarSourceBuffer(),
+                                 ImageAdjustments(saturation: -1, temperature: 1))),
+            atX: 0.1, y: 0.5
+        )
+        let cool = try sample(
+            try render(fullFrame(try makeBiplanarSourceBuffer(),
+                                 ImageAdjustments(saturation: -1, temperature: -1))),
+            atX: 0.1, y: 0.5
+        )
+        // Starting from grey, warm must land on the red side and cool on the blue.
+        XCTAssertGreaterThan(Int(warm.r), Int(warm.b))
+        XCTAssertGreaterThan(Int(cool.b), Int(cool.r))
+    }
+
+    func testAdjustmentsAlsoApplyToBGRASources() throws {
+        let neutral = try luma(of: try render(fullFrame(try makeSourceBuffer(), .neutral)))
+        let brighter = try luma(
+            of: try render(fullFrame(try makeSourceBuffer(), ImageAdjustments(exposure: 1)))
+        )
+        XCTAssertGreaterThan(brighter, neutral + 10)
+    }
+
+    /// Reads the raw luma byte, which is what exposure and contrast move.
+    private func luma(of buffer: CVPixelBuffer, atX xFraction: CGFloat = 0.1) throws -> Int {
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let base = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(buffer, 0))
+        let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+        let x = Int(CGFloat(CVPixelBufferGetWidth(buffer) - 1) * xFraction)
+        let y = CVPixelBufferGetHeight(buffer) / 2
+        return Int(base.advanced(by: y * stride + x).assumingMemoryBound(to: UInt8.self)[0])
     }
 }

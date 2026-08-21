@@ -14,6 +14,51 @@ struct CameraScene: Identifiable, Codable, Equatable {
     /// Placement in normalized output space, top-left origin.
     var overlayRect: CGRect = CGRect(x: 0.72, y: 0.72, width: 0.24, height: 0.24)
     var overlayOpacity: Double = 1.0
+
+    /// Stored as an optional purely so that scenes written before colour
+    /// correction existed keep loading. Swift's synthesised decoder ignores a
+    /// property's default value and throws on a missing key, so a plain
+    /// non-optional here would discard every previously saved scene.
+    private var storedAdjustments: ImageAdjustments?
+
+    var adjustments: ImageAdjustments {
+        get { storedAdjustments ?? .neutral }
+        set { storedAdjustments = newValue }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, deviceID, deviceName, crop, mirrored, quality
+        case overlayEnabled, overlayRect, overlayOpacity
+        case storedAdjustments = "adjustments"
+    }
+
+    /// Spelled out because the private stored property above would otherwise
+    /// make the synthesised memberwise initialiser private too.
+    init(
+        id: UUID = UUID(),
+        name: String,
+        deviceID: String,
+        deviceName: String,
+        crop: CropState = .identity,
+        mirrored: Bool = false,
+        quality: CaptureQuality = .losslessZoom,
+        overlayEnabled: Bool = false,
+        overlayRect: CGRect = CGRect(x: 0.72, y: 0.72, width: 0.24, height: 0.24),
+        overlayOpacity: Double = 1.0,
+        adjustments: ImageAdjustments = .neutral
+    ) {
+        self.id = id
+        self.name = name
+        self.deviceID = deviceID
+        self.deviceName = deviceName
+        self.crop = crop
+        self.mirrored = mirrored
+        self.quality = quality
+        self.overlayEnabled = overlayEnabled
+        self.overlayRect = overlayRect
+        self.overlayOpacity = overlayOpacity
+        self.storedAdjustments = adjustments
+    }
 }
 
 /// Persists scenes and the overlay image reference.

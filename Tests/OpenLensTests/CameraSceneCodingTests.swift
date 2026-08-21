@@ -1,0 +1,65 @@
+import XCTest
+
+/// Guards the on-disk scene format.
+///
+/// Scenes are the user's presets and the only state the app persists, so a
+/// decoding change that throws does not degrade gracefully — `SceneStore.load`
+/// drops the whole array and the user is left with an empty app.
+final class CameraSceneCodingTests: XCTestCase {
+    /// Exactly the shape written by the released version, before colour
+    /// correction existed.
+    private let legacyJSON = """
+        [{
+          "id": "6C7A1D9E-4B2F-4A1E-9C3D-5E8F0A1B2C3D",
+          "name": "Desk",
+          "deviceID": "cam-link-4k",
+          "deviceName": "Cam Link 4K",
+          "crop": { "center": [0.5, 0.5], "zoom": 1.4 },
+          "mirrored": true,
+          "quality": "losslessZoom",
+          "overlayEnabled": false,
+          "overlayRect": [[0.72, 0.72], [0.24, 0.24]],
+          "overlayOpacity": 1
+        }]
+        """
+
+    func testScenesSavedBeforeColourCorrectionStillLoad() throws {
+        let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
+        let scenes = try JSONDecoder().decode([CameraScene].self, from: data)
+
+        let scene = try XCTUnwrap(scenes.first)
+        XCTAssertEqual(scene.name, "Desk")
+        XCTAssertEqual(scene.crop.zoom, 1.4, accuracy: 1e-9)
+        XCTAssertTrue(scene.mirrored)
+        // The missing key must read back as neutral rather than throwing.
+        XCTAssertEqual(scene.adjustments, .neutral)
+    }
+
+    func testAdjustmentsSurviveASaveAndReload() throws {
+        var scene = CameraScene(name: "Desk", deviceID: "cam", deviceName: "Cam")
+        scene.adjustments = ImageAdjustments(
+            exposure: 0.4, contrast: 0.2, saturation: -0.6, temperature: 0.3
+        )
+
+        let data = try JSONEncoder().encode([scene])
+        let restored = try XCTUnwrap(
+            try JSONDecoder().decode([CameraScene].self, from: data).first
+        )
+        XCTAssertEqual(restored.adjustments, scene.adjustments)
+        XCTAssertEqual(restored, scene)
+    }
+
+    /// The stored property is private and optional, but it must not leak that
+    /// into the file format under a different name.
+    func testAdjustmentsAreStoredUnderTheirPublicKey() throws {
+        var scene = CameraScene(name: "Desk", deviceID: "cam", deviceName: "Cam")
+        scene.adjustments = ImageAdjustments(exposure: 1)
+
+        let data = try JSONEncoder().encode(scene)
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        XCTAssertNotNil(object["adjustments"])
+        XCTAssertNil(object["storedAdjustments"])
+    }
+}
