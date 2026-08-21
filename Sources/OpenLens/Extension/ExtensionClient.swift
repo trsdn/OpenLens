@@ -18,6 +18,13 @@ final class ExtensionClient: NSObject, ObservableObject {
     @Published private(set) var isStreaming = false
     @Published private(set) var isConnected = false
 
+    /// True once the search has failed for long enough that waiting is no longer
+    /// a plausible fix. Replacing the extension underneath a running app kills
+    /// this process's CoreMediaIO client state permanently — a fresh process sees
+    /// the camera immediately, this one never will — so the UI has to offer a
+    /// restart instead of spinning forever.
+    @Published private(set) var isStalled = false
+
     /// Fires on the client's own queue as soon as the extension reports a
     /// change. The frame pipeline uses this instead of the `@Published`
     /// property so that starting to stream never waits on the main thread.
@@ -34,6 +41,12 @@ final class ExtensionClient: NSObject, ObservableObject {
     private var stateObserver: DarwinObserver?
     private var retryDelay: TimeInterval = 0.5
     private var lastFailureLog: CFTimeInterval = 0
+    private var searchStartedAt: CFTimeInterval?
+
+    /// How long the search may fail before the UI stops promising a connection.
+    /// The extension is demand-launched, so a few seconds of "not there yet" is
+    /// normal; a quarter of a minute is not.
+    private static let stallThreshold: CFTimeInterval = 12
 
     // MARK: - Lifecycle
 
@@ -102,8 +115,12 @@ final class ExtensionClient: NSObject, ObservableObject {
             deviceID = found.device
             sinkStreamID = found.sink
             retryDelay = 0.5
+            searchStartedAt = nil
             log.info("Found virtual camera \(found.device), sink stream \(found.sink)")
-            DispatchQueue.main.async { self.isConnected = true }
+            DispatchQueue.main.async {
+                self.isConnected = true
+                self.isStalled = false
+            }
             // Opening the sink now pins the extension process for as long as the
             // app runs. CoreMediaIO object IDs only stay valid while the
             // extension lives, so this removes an entire class of races.
@@ -113,7 +130,17 @@ final class ExtensionClient: NSObject, ObservableObject {
 
         // The extension is demand-launched, so "not there yet" is the normal
         // first answer right after an install.
-        DispatchQueue.main.async { self.isConnected = false }
+        let now = CACurrentMediaTime()
+        let startedAt = searchStartedAt ?? now
+        searchStartedAt = startedAt
+        let stalled = now - startedAt >= Self.stallThreshold
+        if stalled {
+            log.error("Virtual camera still not found after \(Int(now - startedAt))s")
+        }
+        DispatchQueue.main.async {
+            self.isConnected = false
+            self.isStalled = stalled
+        }
         let delay = retryDelay
         retryDelay = min(delay * 2, 10)
         queue.asyncAfter(deadline: .now() + delay) { [weak self] in self?.locateDevice() }

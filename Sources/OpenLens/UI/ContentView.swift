@@ -143,6 +143,16 @@ struct ExtensionStatusBanner: View {
                 pill("Live in your conferencing app", icon: "dot.radiowaves.left.and.right", tint: .green)
             } else if client.isConnected {
                 pill("Ready — pick \"OpenLens\" as your camera", icon: "camera", tint: .secondary)
+            } else if client.isStalled {
+                HStack(spacing: 8) {
+                    pill(
+                        "Lost contact with the camera extension — this happens after it updates",
+                        icon: "exclamationmark.triangle.fill",
+                        tint: .orange
+                    )
+                    Button("Restart OpenLens") { Self.relaunch() }
+                        .buttonStyle(.borderedProminent)
+                }
             } else {
                 pill("Connecting to the camera extension…", icon: "hourglass", tint: .secondary)
             }
@@ -167,11 +177,28 @@ struct ExtensionStatusBanner: View {
 
     /// Deep link straight to the pane that lists system extensions; hunting for
     /// it manually is the single most common place first-run gets stuck.
-    static func openLoginItemsSettings() {
-        guard let url = URL(
+    static func openLoginItemsSettings() {        guard let url = URL(
             string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
         ) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    /// Starts a fresh copy and quits this one.
+    ///
+    /// When the camera extension is replaced underneath a running app, this
+    /// process's CoreMediaIO client state dies with the old extension and no
+    /// amount of retrying brings it back — but a new process finds the camera
+    /// immediately. So the honest fix is a relaunch, one click instead of a
+    /// spinner that never resolves.
+    static func relaunch() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(
+            at: Bundle.main.bundleURL,
+            configuration: configuration
+        ) { _, _ in
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
     }
 
     private func pill(_ text: String, icon: String, tint: Color) -> some View {

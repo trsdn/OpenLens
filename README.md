@@ -108,7 +108,8 @@ xcrun notarytool store-credentials openlens-notary \
 
 | Symptom | Cause |
 | --- | --- |
-| The camera never appears in Zoom | The extension is not approved yet, or the app was launched from outside `/Applications`. |
+| The camera never appears in Zoom | The extension is not approved yet, or the app was launched from outside `/Applications`. Conferencing apps also enumerate cameras **at launch** — quit and reopen Zoom/Teams/Meet after installing OpenLens. |
+| "Lost contact with the camera extension" | The extension was replaced while the app was running (an update does this). That kills the app's CoreMediaIO client state for good, so the banner offers a **Restart OpenLens** button; a fresh process reconnects instantly. |
 | "Camera is in use" | Some UVC devices (Cam Link 4K among them) refuse concurrent access. Quit OBS or any other app holding the camera. |
 | A static card instead of the picture | The app is not running. The extension keeps the device alive on its own so calls do not break. |
 | Zoom looks soft | You are past the "Stays sharp up to" limit in the inspector, and the badge says `soft`. Raise **Capture quality**. |
