@@ -87,7 +87,11 @@ final class FramePipeline: NSObject, @unchecked Sendable {
         target?.configure(device: renderer.device)
     }
 
-    func loadOverlay(url: URL, rect: CGRect, opacity: Double) throws {
+    /// Returns the image's pixel size so the caller can give the placement rect
+    /// the right aspect ratio — the shader stretches the texture across the
+    /// rect, so nothing else prevents a squashed logo.
+    @discardableResult
+    func loadOverlay(url: URL, rect: CGRect, opacity: Double) throws -> CGSize {
         let (texture, size) = try OverlayLoader.load(url: url, device: renderer.device)
         setOverlay(
             OverlayTexture(
@@ -97,6 +101,7 @@ final class FramePipeline: NSObject, @unchecked Sendable {
                 pixelSize: size
             )
         )
+        return size
     }
 
     // MARK: - Hot path

@@ -27,8 +27,10 @@ not touch audio, and has no timeline, no projects and no accounts.
   the selected scene as you change them — there is no save button. Duplicate
   snapshots the current look, and **⌥1…⌥9** switch between scenes system-wide,
   so it works while you are in a call.
-- **PNG overlay with alpha,** placed on a nine-position grid with an opacity
-  slider and composited in the same GPU pass.
+- **PNG overlay with alpha.** Drag it in the picture to move it, pull a corner
+  to resize it, double-click to reset the size — or type exact percentages in
+  the inspector and snap it to any of nine positions. The aspect ratio comes
+  from the image, and it is composited in the same GPU pass.
 - **Exposure, contrast, white balance and saturation** for cameras that have no
   controls of their own — HDMI grabbers like a Cam Link expose none, and macOS
   offers no manual values either. Four sliders, folded into the render pass that

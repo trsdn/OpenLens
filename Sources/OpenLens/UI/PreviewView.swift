@@ -32,6 +32,15 @@ final class MetalPreviewView: NSView {
     private(set) lazy var renderTarget = PreviewRenderTarget(layer: metalLayer)
     private var occlusionObserver: NSObjectProtocol?
     private var dragOrigin: CGPoint?
+    /// What the current drag is doing. Decided once on mouse-down so the
+    /// gesture cannot change its mind halfway through and start panning the
+    /// crop while the hand is still moving a logo.
+    private enum DragMode {
+        case pan
+        case moveOverlay
+        case resizeOverlay(OverlayCorner)
+    }
+    private var dragMode: DragMode = .pan
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -117,6 +126,46 @@ final class MetalPreviewView: NSView {
         model?.setPreviewVisible(visible)
     }
 
+    // MARK: - Overlay interaction
+
+    /// View point to normalized output space, top-left origin — the same space
+    /// the shader places the overlay in. Unlike `sourceCoordinate` this ignores
+    /// the crop and the mirror, because the overlay is composited after both.
+    private func outputCoordinate(for point: CGPoint) -> CGPoint? {
+        let box = metalLayer.frame
+        guard box.width > 0, box.height > 0 else { return nil }
+        let u = (point.x - box.minX) / box.width
+        let v = (point.y - box.minY) / box.height
+        guard u >= 0, u <= 1, v >= 0, v <= 1 else { return nil }
+        return CGPoint(x: u, y: v)
+    }
+
+    /// Nothing is grabbable unless the overlay is actually on screen.
+    private func overlayHit(at point: CGPoint) -> OverlayHit {
+        guard let model,
+              let scene = model.scenes.selectedScene,
+              scene.overlayEnabled,
+              model.scenes.overlayURL != nil,
+              scene.overlayOpacity > 0,
+              let coordinate = outputCoordinate(for: point)
+        else { return .none }
+        let box = metalLayer.frame
+        // A fixed grab radius in points, converted per axis because normalized
+        // output space is not square.
+        let radius = CGSize(width: 11 / box.width, height: 11 / box.height)
+        return OverlayGeometry.hit(point: coordinate, in: scene.overlayRect, cornerRadius: radius)
+    }
+
+    private func cursor(for hit: OverlayHit) -> NSCursor {
+        switch hit {
+        case .none: return .openHand
+        case .body: return .pointingHand
+        // AppKit exposes no public diagonal resize cursor, and the private ones
+        // are not worth the risk for a cosmetic hint.
+        case .corner: return .crosshair
+        }
+    }
+
     // MARK: - Zoom interaction
 
     /// Converts a point in this view to normalized source coordinates, so the
@@ -158,8 +207,25 @@ final class MetalPreviewView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        dragOrigin = convert(event.locationInWindow, from: nil)
-        if event.clickCount == 2 { model?.resetZoom() }
+        let point = convert(event.locationInWindow, from: nil)
+        dragOrigin = point
+        if event.clickCount == 2 {
+            // Double-click on the overlay is a size reset, not a zoom reset —
+            // resetting the zoom from there would look like a misfire.
+            switch overlayHit(at: point) {
+            case .none:
+                model?.resetZoom()
+            case .body, .corner:
+                model?.resetOverlaySize()
+            }
+            dragMode = .pan
+            return
+        }
+        switch overlayHit(at: point) {
+        case .none: dragMode = .pan
+        case .body: dragMode = .moveOverlay
+        case .corner(let corner): dragMode = .resizeOverlay(corner)
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -168,25 +234,63 @@ final class MetalPreviewView: NSView {
         let box = metalLayer.frame
         guard box.width > 0, box.height > 0 else { return }
 
-        let crop = model.currentCropRect
-        let mirrored = model.scenes.selectedScene?.mirrored == true
-        let dxView = (point.x - origin.x) / box.width
-        let dyView = (point.y - origin.y) / box.height
-        // Dragging moves the image, so the crop window travels the other way.
-        let delta = CGSize(
-            width: (mirrored ? dxView : -dxView) * crop.width,
-            height: -dyView * crop.height
-        )
-        model.pan(by: delta)
-        dragOrigin = point
+        switch dragMode {
+        case .moveOverlay:
+            model.moveOverlay(
+                by: CGSize(
+                    width: (point.x - origin.x) / box.width,
+                    height: (point.y - origin.y) / box.height
+                )
+            )
+            dragOrigin = point
+
+        case .resizeOverlay(let corner):
+            // Resizing follows the pointer absolutely rather than by delta, so
+            // the corner cannot drift away from the cursor over a long drag.
+            guard let coordinate = outputCoordinate(for: point) else { return }
+            model.resizeOverlay(corner: corner, to: coordinate)
+
+        case .pan:
+            let crop = model.currentCropRect
+            let mirrored = model.scenes.selectedScene?.mirrored == true
+            let dxView = (point.x - origin.x) / box.width
+            let dyView = (point.y - origin.y) / box.height
+            // Dragging moves the image, so the crop window travels the other way.
+            let delta = CGSize(
+                width: (mirrored ? dxView : -dxView) * crop.width,
+                height: -dyView * crop.height
+            )
+            model.pan(by: delta)
+            dragOrigin = point
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
         dragOrigin = nil
-        model?.persistCrop()
+        switch dragMode {
+        case .pan: model?.persistCrop()
+        case .moveOverlay, .resizeOverlay: model?.commitOverlayRect()
+        }
+        dragMode = .pan
     }
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .openHand)
+    override func mouseMoved(with event: NSEvent) {
+        cursor(for: overlayHit(at: convert(event.locationInWindow, from: nil))).set()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        NSCursor.arrow.set()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero,
+                options: [.activeInKeyWindow, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited],
+                owner: self
+            )
+        )
     }
 }

@@ -211,8 +211,9 @@ struct InspectorView: View {
                     "Overlay",
                     info: "A PNG with transparency composited on top of the picture in the "
                         + "same GPU pass, so it is free. Use it for a logo or a lower third. "
-                        + "Placement is a nine-position grid rather than dragging, because "
-                        + "dragging in the picture already pans the crop."
+                        + "Drag it in the picture to move it and pull a corner to resize it; "
+                        + "double-click it to reset the size. Dragging anywhere else still "
+                        + "pans the crop. The aspect ratio comes from the image and is kept."
                 )
             }
         }
@@ -322,65 +323,138 @@ struct AdjustmentSlider: View {
     }
 }
 
-/// Nine-position placement plus a size slider.
+/// Numbers and snap positions for the overlay.
 ///
-/// Dragging the overlay directly in the preview would fight the pan gesture, so
-/// placement is explicit and predictable instead.
+/// Dragging in the preview is the primary way to place it; this is here for the
+/// cases dragging is bad at — an exact percentage, and getting back to a corner
+/// without aiming.
 struct OverlayPlacementControls: View {
     @ObservedObject var model: AppModel
+
+    private static let margin: CGFloat = 0.04
 
     private var rect: CGRect {
         model.scenes.selectedScene?.overlayRect
             ?? CGRect(x: 0.72, y: 0.72, width: 0.24, height: 0.24)
     }
 
+    /// Percentages read better than 0…1 fractions, and are what the numbers on
+    /// screen have to agree with.
+    private var sizeBinding: Binding<Double> {
+        Binding(
+            get: { Double(rect.width) * 100 },
+            set: { model.setOverlayRect(OverlayGeometry.scaled(rect, toWidth: CGFloat($0) / 100)) }
+        )
+    }
+
+    private func originBinding(_ axis: KeyPath<CGPoint, CGFloat>) -> Binding<Double> {
+        Binding(
+            get: { Double(rect.origin[keyPath: axis]) * 100 },
+            set: { newValue in
+                let target = CGFloat(newValue) / 100
+                let delta = axis == \.x
+                    ? CGSize(width: target - rect.minX, height: 0)
+                    : CGSize(width: 0, height: target - rect.minY)
+                model.setOverlayRect(OverlayGeometry.moved(rect, by: delta))
+            }
+        )
+    }
+
     var body: some View {
         LabeledContent("Size") {
-            Slider(
-                value: Binding(
-                    get: { rect.width },
-                    set: { newWidth in
-                        let aspect = rect.height > 0 ? rect.width / rect.height : 1
-                        var updated = rect
-                        let anchorX = rect.midX
-                        let anchorY = rect.midY
-                        updated.size = CGSize(width: newWidth, height: newWidth / aspect)
-                        updated.origin = CGPoint(
-                            x: anchorX - updated.width / 2,
-                            y: anchorY - updated.height / 2
-                        )
-                        model.setOverlayRect(updated)
+            HStack(spacing: 6) {
+                TextField(
+                    "Size",
+                    value: sizeBinding,
+                    format: .number.precision(.fractionLength(0))
+                )
+                .multilineTextAlignment(.trailing)
+                .frame(width: 40)
+                .onSubmit { model.commitOverlayRect() }
+                Text("%").foregroundStyle(.secondary)
+                Slider(
+                    value: sizeBinding,
+                    in: Double(OverlayGeometry.minimumWidth) * 100...100,
+                    onEditingChanged: { editing in
+                        if !editing { model.commitOverlayRect() }
                     }
-                ),
-                in: 0.05...1.0
-            )
+                )
+            }
+        }
+        .accessibilityLabel("Overlay size")
+
+        LabeledContent("Position") {
+            HStack(spacing: 6) {
+                Text("X").foregroundStyle(.secondary)
+                TextField("X", value: originBinding(\.x), format: .number.precision(.fractionLength(0)))
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 40)
+                    .onSubmit { model.commitOverlayRect() }
+                Text("Y").foregroundStyle(.secondary)
+                TextField("Y", value: originBinding(\.y), format: .number.precision(.fractionLength(0)))
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 40)
+                    .onSubmit { model.commitOverlayRect() }
+                Text("%").foregroundStyle(.secondary)
+            }
         }
 
-        Grid(horizontalSpacing: 4, verticalSpacing: 4) {
-            ForEach(0..<3, id: \.self) { row in
-                GridRow {
-                    ForEach(0..<3, id: \.self) { column in
-                        Button {
-                            place(row: row, column: column)
-                        } label: {
-                            Image(systemName: "square")
-                                .frame(width: 22, height: 22)
+        LabeledContent("Snap to") {
+            Grid(horizontalSpacing: 4, verticalSpacing: 4) {
+                ForEach(0..<3, id: \.self) { row in
+                    GridRow {
+                        ForEach(0..<3, id: \.self) { column in
+                            Button {
+                                place(row: row, column: column)
+                            } label: {
+                                Image(systemName: symbol(row: row, column: column))
+                                    .frame(width: 20, height: 20)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(isPlaced(row: row, column: column) ? .accentColor : nil)
+                            .help(name(row: row, column: column))
+                            .accessibilityLabel(name(row: row, column: column))
                         }
-                        .buttonStyle(.bordered)
                     }
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    // MARK: - Snapping
+
+    private func placement(row: Int, column: Int) -> CGPoint {
+        let xs: [CGFloat] = [Self.margin, (1 - rect.width) / 2, 1 - rect.width - Self.margin]
+        let ys: [CGFloat] = [Self.margin, (1 - rect.height) / 2, 1 - rect.height - Self.margin]
+        return CGPoint(x: xs[column], y: ys[row])
     }
 
     private func place(row: Int, column: Int) {
-        let margin: CGFloat = 0.04
         var updated = rect
-        let xs: [CGFloat] = [margin, (1 - rect.width) / 2, 1 - rect.width - margin]
-        let ys: [CGFloat] = [margin, (1 - rect.height) / 2, 1 - rect.height - margin]
-        updated.origin = CGPoint(x: xs[column], y: ys[row])
-        model.setOverlayRect(updated)
-        model.scenes.save()
+        updated.origin = placement(row: row, column: column)
+        model.setOverlayRect(OverlayGeometry.moved(updated, by: .zero))
+        model.commitOverlayRect()
+    }
+
+    /// Marks the button the overlay is currently sitting on, so the grid says
+    /// where the overlay *is* and not only where it could go.
+    private func isPlaced(row: Int, column: Int) -> Bool {
+        let target = placement(row: row, column: column)
+        return abs(target.x - rect.minX) < 0.005 && abs(target.y - rect.minY) < 0.005
+    }
+
+    private func symbol(row: Int, column: Int) -> String {
+        let names = [
+            ["arrow.up.left", "arrow.up", "arrow.up.right"],
+            ["arrow.left", "smallcircle.filled.circle", "arrow.right"],
+            ["arrow.down.left", "arrow.down", "arrow.down.right"]
+        ]
+        return names[row][column]
+    }
+
+    private func name(row: Int, column: Int) -> String {
+        let vertical = ["Top", "Middle", "Bottom"][row]
+        let horizontal = ["left", "centre", "right"][column]
+        return row == 1 && column == 1 ? "Centre" : "\(vertical) \(horizontal)"
     }
 }

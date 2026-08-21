@@ -373,6 +373,31 @@ final class AppModel: ObservableObject {
         pipeline?.update { $0.overlayRect = rect }
     }
 
+    /// Called while the overlay is dragged in the preview. The pipeline sees
+    /// every step, the disk write waits for `commitOverlayRect` so a drag does
+    /// not serialise every scene sixty times a second.
+    func moveOverlay(by delta: CGSize) {
+        guard let rect = scenes.selectedScene?.overlayRect else { return }
+        setOverlayRect(OverlayGeometry.moved(rect, by: delta))
+    }
+
+    func resizeOverlay(corner: OverlayCorner, to point: CGPoint) {
+        guard let rect = scenes.selectedScene?.overlayRect else { return }
+        setOverlayRect(OverlayGeometry.resized(rect, corner: corner, to: point))
+    }
+
+    func commitOverlayRect() {
+        scenes.save()
+    }
+
+    /// Back to a quarter of the frame width, keeping the position and the
+    /// image's aspect ratio.
+    func resetOverlaySize() {
+        guard let rect = scenes.selectedScene?.overlayRect else { return }
+        setOverlayRect(OverlayGeometry.scaled(rect, toWidth: 0.24))
+        commitOverlayRect()
+    }
+
     func setOverlayOpacity(_ opacity: Double) {
         scenes.mutateSelected { $0.overlayOpacity = opacity }
         pipeline?.update { $0.overlayOpacity = opacity }
@@ -406,11 +431,24 @@ final class AppModel: ObservableObject {
             return
         }
         do {
-            try pipeline.loadOverlay(
+            let rect = scenes.selectedScene?.overlayRect ?? .zero
+            let pixelSize = try pipeline.loadOverlay(
                 url: url,
-                rect: scenes.selectedScene?.overlayRect ?? .zero,
+                rect: rect,
                 opacity: scenes.selectedScene?.overlayOpacity ?? 1
             )
+            // Idempotent: a rect that already matches the image comes back
+            // unchanged, so running this on every load costs nothing and stops
+            // a stale scene from displaying a stretched logo forever.
+            let fitted = OverlayGeometry.fitted(
+                rect,
+                pixelSize: pixelSize,
+                outputAspect: CGFloat(OpenLensOutput.aspectRatio)
+            )
+            if fitted != rect {
+                setOverlayRect(fitted)
+                scenes.save()
+            }
         } catch {
             errorMessage = "Could not load the overlay image."
         }
