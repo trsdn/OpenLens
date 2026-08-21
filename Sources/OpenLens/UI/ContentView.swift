@@ -142,7 +142,22 @@ struct ExtensionStatusBanner: View {
             if client.isStreaming {
                 pill("Live in your conferencing app", icon: "dot.radiowaves.left.and.right", tint: .green)
             } else if client.isConnected {
-                pill("Ready — pick \"OpenLens\" as your camera", icon: "camera", tint: .secondary)
+                // "Ready" is the normal resting state, not a step on the way to
+                // something. Saying only "pick OpenLens as your camera" reads as
+                // a promise that the banner will change once you pick it — but
+                // conferencing apps do not open a camera when you select it in a
+                // menu, only when video is actually switched on.
+                pill(
+                    "Ready — now turn your video on in Teams, Zoom or Meet",
+                    icon: "camera",
+                    tint: .secondary
+                )
+                .help(
+                    "The camera is published and waiting. Choosing \"OpenLens\" in a "
+                        + "settings menu is not enough — apps only open a camera once video "
+                        + "is switched on, in a call or in their device preview. This turns "
+                        + "green the moment that happens."
+                )
             } else if client.isStalled {
                 HStack(spacing: 8) {
                     pill(
