@@ -256,9 +256,17 @@ final class OpenLensSinkStreamSource: NSObject, CMIOExtensionStreamSource {
         }
     }
 
-    /// Pulls one buffer and immediately re-arms. `consumeSampleBuffer` blocks in
-    /// the extension's own dispatch machinery rather than spinning, so this is a
-    /// pull loop without a timer.
+    /// How long to wait before asking again after the sink queue came back empty.
+    ///
+    /// `consumeSampleBuffer` does not block when there is nothing to hand over —
+    /// it calls back immediately with no buffer. Re-arming straight away turns
+    /// the pull loop into a busy loop that burned a third of a CPU core around
+    /// the clock, whether or not a single frame was flowing. Frames still arrive
+    /// with no added latency, because a successful read re-arms immediately; only
+    /// the empty reads wait, and 4 ms is an eighth of a frame at 30 fps.
+    private static let emptyReadBackoff: DispatchTimeInterval = .milliseconds(4)
+
+    /// Pulls one buffer at a time from the app and forwards it.
     private func consumeNext() {
         guard isConsuming else { return }
         guard let client else {
@@ -281,10 +289,15 @@ final class OpenLensSinkStreamSource: NSObject, CMIOExtensionStreamSource {
                         hostTimeInNanoseconds: hostTime
                     )
                 )
-            } else if let error {
+                self.queue.async { self.consumeNext() }
+                return
+            }
+            if let error {
                 logger.error("Sink consume failed: \(error.localizedDescription, privacy: .public)")
             }
-            self.queue.async { self.consumeNext() }
+            self.queue.asyncAfter(deadline: .now() + Self.emptyReadBackoff) {
+                self.consumeNext()
+            }
         }
     }
 }
