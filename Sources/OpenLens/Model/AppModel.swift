@@ -15,6 +15,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var effectiveZoom: CGFloat = 1
     @Published private(set) var losslessZoomLimit: CGFloat = 1
     @Published private(set) var isReceivingFrames = false
+    /// What the camera is really handing over, which is not always what it advertises.
+    @Published private(set) var sourceSummary = ""
+
     @Published private(set) var previewVisible = true
     /// User-facing switch, independent of whether the window happens to be
     /// visible. Turning the preview off skips a whole render pass per frame, and
@@ -419,5 +422,19 @@ final class AppModel: ObservableObject {
 
     private func updateFrameHealth() {
         isReceivingFrames = Date().timeIntervalSince(lastFrameActivity) < 2.5
+        updateSourceSummary()
+    }
+
+    private func updateSourceSummary() {
+        let size = capture.sourcePixelSize
+        guard isReceivingFrames, size.width > 0 else {
+            if !sourceSummary.isEmpty { sourceSummary = "" }
+            return
+        }
+        let rate = capture.sourceFrameRate
+        let summary = rate > 0
+            ? String(format: "%d × %d · %.0f fps", Int(size.width), Int(size.height), rate)
+            : String(format: "%d × %d", Int(size.width), Int(size.height))
+        if summary != sourceSummary { sourceSummary = summary }
     }
 }

@@ -90,6 +90,37 @@ The lesson both times: measure the states, don't trust the theory. `ps %cpu` is 
 lifetime average and will hide all of this — diff `ps -o time=` over a fixed window
 instead.
 
+### Capture quality: sharpness costs frames, not CPU
+
+"Up to 4K" is worth it if you zoom. Cropping a 4K frame to 1.4× and scaling it into a
+1080p output measured **1.63× more fine detail** than doing the same crop on a 1080p
+source, and 2.06× more energy at half the Nyquist frequency. It is real, but it is
+subtle: visible on edges and texture, not a different picture.
+
+The catch is bandwidth, not processing. Uncompressed 4K 4:2:0 at 30 fps is ~373 MB/s,
+which a USB 3 capture device cannot carry. A Cam Link 4K therefore delivers about
+**20 fps** at 4K against a solid 30 fps at 1080p — sharper stills, choppier motion.
+Both 4K formats it advertises behave the same way, so this is the link, not the format
+choice. The inspector shows a live "Receiving" readout of what actually arrives, which
+is the only honest way to make that call on an unknown camera.
+
+Three AVFoundation traps sit between asking for 4K and getting it, all found the hard way:
+
+- `device.activeFormat` is **outranked by the session preset**. With the default `.high`
+  a 4K device still hands back 1080p. macOS has no `.inputPriority`, so a size-specific
+  preset like `.hd4K3840x2160` has to be set, and the video output has to be attached
+  *before* it or the session renegotiates straight back to 1080p.
+- `output.videoSettings` naming a pixel format **without** `kCVPixelBufferWidthKey` and
+  `HeightKey` silently inserts a scaler that returns 1080p — whatever the preset and
+  `activeFormat` say. This one is invisible: nothing logs, nothing fails.
+- Frame rate ranges are **never round numbers** (a Cam Link reports 30.00003 and
+  60.00024), the **first** range is the fastest one, and a rate pinned inside
+  `beginConfiguration`/`commitConfiguration` is wiped when the preset is committed.
+  Pinning has to happen again *after* `startRunning()`, clamped into the range the
+  device actually published. Missing this ran "1080p" at 60 fps, which made the
+  supposedly cheap mode cost **13.2 %** of a core against 4K's 5 %; pinned properly it
+  is 8 %, and the capture path alone drops from 4.3 % to 1.3 %.
+
 ## Install
 
 Requires macOS 14 or newer on Apple Silicon.

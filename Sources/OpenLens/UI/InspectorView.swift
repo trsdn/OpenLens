@@ -32,9 +32,20 @@ struct InspectorView: View {
                     InfoButton(
                         text: "Capturing above 1080p is what buys you sharp zoom: a 4K source "
                             + "can be cropped to 2× and still fill the 1080p output with real "
-                            + "pixels. It costs a little more CPU, so drop to 1080p if you "
-                            + "never zoom."
+                            + "pixels.\n\nThe catch is bandwidth. Uncompressed 4K can exceed "
+                            + "what the camera's USB connection carries, and it then delivers "
+                            + "fewer frames per second — sharper stills, choppier motion. The "
+                            + "line below shows what you are actually getting, so compare the "
+                            + "two settings and keep the one that reads 30 fps."
                     )
+                }
+
+                if !model.sourceSummary.isEmpty {
+                    LabeledContent("Receiving") {
+                        Text(model.sourceSummary).monospacedDigit()
+                    }
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
                 }
 
                 Toggle("Mirror", isOn: mirrorBinding)
