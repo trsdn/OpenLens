@@ -107,6 +107,16 @@ Three findings worth recording, because all three were counter-intuitive:
   **zero** improvement. It is kept because it is the format the rest of the stack
   wants, but it is not why this is fast. CoreMediaIO hands consumers `2vuy`
   regardless of what we send.
+- The sink stream used to be opened as soon as the device was found and held for
+  the whole life of the app, to pin the extension process and dodge stale object
+  IDs. A *started* CoreMediaIO stream is not free: the 4 ms empty-read backoff
+  above still means 250 wakeups a second, and CoreMediaIO does per-second
+  bookkeeping for every running stream — visible as a steady 1 Hz tick under
+  `log show --predicate 'subsystem == "com.apple.cmio"'`. That was **3–6 % of a
+  core, around the clock, with nothing streaming**. The sink now opens when a
+  consumer actually starts the camera and is released five seconds after it
+  stops; the delay is what keeps a camera switch mid-call from paying for a fresh
+  stream start. Idle extension cost is now **0.0 %**.
 
 The lesson both times: measure the states, don't trust the theory. `ps %cpu` is a
 lifetime average and will hide all of this — diff `ps -o time=` over a fixed window
