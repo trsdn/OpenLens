@@ -33,8 +33,9 @@ not touch audio, and has no timeline, no projects and no accounts.
   from the image, and it is composited in the same GPU pass.
 - **Exposure, contrast, white balance and saturation** for cameras that have no
   controls of their own — HDMI grabbers like a Cam Link expose none, and macOS
-  offers no manual values either. Four sliders, folded into the render pass that
-  already runs, so they cost nothing measurable.
+  offers no manual values either. Four sliders that snap back to neutral in the
+  middle, each with a field you can type an exact value into, folded into the
+  render pass that already runs, so they cost nothing measurable.
 - **Cheap.** Around 17 % of a single core — roughly 1.4 % of an M4 Pro — at
   1080p30 while a conferencing app is actually pulling frames. The capture
   session does not run at all when nobody is looking, and the preview pass is

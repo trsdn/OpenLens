@@ -124,33 +124,28 @@ struct InspectorView: View {
                     value: adjustmentBinding(\.exposure),
                     range: ImageAdjustments.exposureRange,
                     onCommit: { model.commitAdjustments() },
-                    format: { $0 == 0 ? "0 EV" : String(format: "%+.1f EV", $0) }
+                    scale: .stops
                 )
                 AdjustmentSlider(
                     title: "Contrast",
                     value: adjustmentBinding(\.contrast),
                     range: ImageAdjustments.unitRange,
                     onCommit: { model.commitAdjustments() },
-                    format: Self.percentage
+                    scale: .percent
                 )
                 AdjustmentSlider(
                     title: "White balance",
                     value: adjustmentBinding(\.temperature),
                     range: ImageAdjustments.unitRange,
                     onCommit: { model.commitAdjustments() },
-                    format: { value in
-                        guard value != 0 else { return "Neutral" }
-                        return String(
-                            format: "%+.0f%% %@", value * 100, value > 0 ? "warm" : "cool"
-                        )
-                    }
+                    scale: .warmth
                 )
                 AdjustmentSlider(
                     title: "Saturation",
                     value: adjustmentBinding(\.saturation),
                     range: ImageAdjustments.unitRange,
                     onCommit: { model.commitAdjustments() },
-                    format: Self.percentage
+                    scale: .percent
                 )
 
                 Button("Reset to neutral") { model.resetAdjustments() }
@@ -162,6 +157,9 @@ struct InspectorView: View {
                         + "device, so these are applied to the picture itself rather than to "
                         + "the camera. They ride along in the GPU pass that already crops "
                         + "every frame, which is why they cost nothing measurable.\n\n"
+                        + "Drag for a rough value — the slider snaps to neutral near the "
+                        + "middle — or type an exact number in the field. Double-click a "
+                        + "label to put that one control back to neutral.\n\n"
                         + "Correct at the camera first where you can — this cannot recover "
                         + "detail that was never captured. It is here to match a second "
                         + "camera to your main one, or to rescue a room whose light you "
@@ -234,10 +232,6 @@ struct InspectorView: View {
 
     // MARK: - Bindings
 
-    private static let percentage: (Double) -> String = { value in
-        value == 0 ? "Neutral" : String(format: "%+.0f%%", value * 100)
-    }
-
     private func adjustmentBinding(
         _ keyPath: WritableKeyPath<ImageAdjustments, Double>
     ) -> Binding<Double> {
@@ -290,36 +284,141 @@ struct InspectorView: View {
     }
 }
 
-/// A slider that is neutral in the middle, with the current value spelled out
-/// above it.
+/// How a raw adjustment value is spelled out in its field.
+///
+/// The stored values are all neutral at zero and dimensionless apart from
+/// exposure, so the field shows them in the unit a photographer expects — stops
+/// for exposure, percent for the rest — and converts back on the way in.
+struct AdjustmentScale {
+    /// Raw value multiplied by this is the number in the field.
+    let displayScale: Double
+    let fractionLength: Int
+    let unit: String
+    /// A word for the direction of the value, shown next to the field when
+    /// there is nothing else to say what "+20" means.
+    let caption: (Double) -> String?
+
+    static let stops = AdjustmentScale(
+        displayScale: 1,
+        fractionLength: 1,
+        unit: "EV",
+        caption: { _ in nil }
+    )
+
+    static let percent = AdjustmentScale(
+        displayScale: 100,
+        fractionLength: 0,
+        unit: "%",
+        caption: { _ in nil }
+    )
+
+    static let warmth = AdjustmentScale(
+        displayScale: 100,
+        fractionLength: 0,
+        unit: "%",
+        caption: { value in
+            guard value != 0 else { return nil }
+            return value > 0 ? "warm" : "cool"
+        }
+    )
+}
+
+/// A slider that is neutral in the middle, with an editable number beside it.
 ///
 /// Two rows rather than one: the inspector is only ~240pt wide, and a slider
-/// sharing a row with a label and a readout collapses to a stub you cannot aim
+/// sharing a row with a label and a field collapses to a stub you cannot aim
 /// at. The write to disk is deferred to the end of the drag via
 /// `onEditingChanged`, so dragging does not serialise the scene list on every
 /// frame.
+///
+/// Dragging snaps to zero inside a small dead zone, because these controls are
+/// only useful if "untouched" is reachable without aiming; typing a number
+/// bypasses the snap, so an exact 3 % is still possible.
 struct AdjustmentSlider: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
     let onCommit: () -> Void
-    let format: (Double) -> String
+    let scale: AdjustmentScale
+
+    /// Writes are debounced rather than tied to the end of a drag, because a
+    /// drag is not the only way to move the value: arrow keys and VoiceOver
+    /// never end an "editing session", so anything committed only from
+    /// `onEditingChanged` was silently lost on the next launch.
+    @State private var commitTask: Task<Void, Never>?
+
+    /// Three percent of the travel — wide enough to catch a mouse, narrow
+    /// enough that the knob does not feel stuck.
+    private var snapDistance: Double { (range.upperBound - range.lowerBound) * 0.03 }
+
+    private var sliderBinding: Binding<Double> {
+        Binding(
+            get: { value },
+            set: { value = abs($0) < snapDistance ? 0 : $0 }
+        )
+    }
+
+    private var fieldBinding: Binding<Double> {
+        Binding(
+            get: { value * scale.displayScale },
+            set: { typed in
+                let raw = typed / scale.displayScale
+                value = min(max(raw, range.lowerBound), range.upperBound)
+                commitNow()
+            }
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
+            HStack(spacing: 4) {
                 Text(title)
-                Spacer()
-                Text(format(value))
-                    .monospacedDigit()
+                    .onTapGesture(count: 2) {
+                        value = 0
+                        commitNow()
+                    }
+                    .help("Double-click the label to reset this to neutral.")
+                Spacer(minLength: 0)
+                if let caption = scale.caption(value) {
+                    Text(caption)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                        .lineLimit(1)
+                }
+                TextField(
+                    "",
+                    value: fieldBinding,
+                    format: .number.precision(.fractionLength(scale.fractionLength))
+                )
+                .multilineTextAlignment(.trailing)
+                .monospacedDigit()
+                .frame(width: 40)
+                .accessibilityLabel("\(title) value")
+                Text(scale.unit)
                     .foregroundStyle(.secondary)
                     .font(.caption)
             }
-            Slider(value: $value, in: range) { editing in
-                if !editing { onCommit() }
+            Slider(value: sliderBinding, in: range) { editing in
+                if !editing { commitNow() }
             }
             .accessibilityLabel(title)
         }
+        .onChange(of: value) { _, _ in scheduleCommit() }
+    }
+
+    private func scheduleCommit() {
+        commitTask?.cancel()
+        commitTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            onCommit()
+        }
+    }
+
+    private func commitNow() {
+        commitTask?.cancel()
+        commitTask = nil
+        onCommit()
     }
 }
 
