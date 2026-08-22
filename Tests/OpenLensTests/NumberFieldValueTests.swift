@@ -1,7 +1,5 @@
 import XCTest
 
-@testable import OpenLens
-
 /// The number beside each slider used to be parsed on every keystroke, which
 /// meant a value could not be typed at all: on the way to 56 the field held 5,
 /// clamped it, and rewrote itself under the cursor, so the remaining digits
