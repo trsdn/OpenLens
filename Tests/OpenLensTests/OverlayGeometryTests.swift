@@ -1,8 +1,6 @@
 import CoreGraphics
 import XCTest
 
-@testable import OpenLens
-
 /// The overlay maths is the part that can be quietly wrong: a logo that is
 /// slightly stretched or a corner that drifts away from the cursor is easy to
 /// ship and hard to notice.
