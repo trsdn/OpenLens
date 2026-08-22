@@ -42,6 +42,13 @@ final class ExtensionClient: NSObject, ObservableObject {
     private var retryDelay: TimeInterval = 0.5
     private var lastFailureLog: CFTimeInterval = 0
     private var searchStartedAt: CFTimeInterval?
+    /// Whether anything actually wants frames right now. A started sink stream is
+    /// not free: CoreMediaIO does per-second bookkeeping for every *running*
+    /// stream, and the extension's pull loop wakes 250 times a second waiting for
+    /// buffers that never come. Both of those cost power around the clock if the
+    /// sink is held open for the whole life of the app.
+    private var wantsSink = false
+    private var sinkStopWork: DispatchWorkItem?
     /// Built once. The output format never changes, and rebuilding it per frame
     /// made CoreMedia re-derive the colour metadata 30 times a second.
     private var outputFormat: CMFormatDescription?
@@ -51,12 +58,21 @@ final class ExtensionClient: NSObject, ObservableObject {
     /// normal; a quarter of a minute is not.
     private static let stallThreshold: CFTimeInterval = 12
 
+    /// How long the sink stays open after streaming stops.
+    ///
+    /// Switching cameras inside a call stops and restarts the stream within a few
+    /// hundred milliseconds. Tearing the sink down on the first `false` would
+    /// make every switch pay for a fresh stream start, so idleness has to be
+    /// sustained before it counts.
+    private static let sinkLinger: TimeInterval = 5
+
     // MARK: - Lifecycle
 
     func connect() {
         observeDeviceList()
         stateObserver = StreamingStateChannel.observe(queue: queue) { [weak self] streaming in
             guard let self else { return }
+            self.setSinkActive(streaming)
             self.onStreamingChanged?(streaming)
             DispatchQueue.main.async { self.isStreaming = streaming }
         }
@@ -66,10 +82,36 @@ final class ExtensionClient: NSObject, ObservableObject {
     func shutdown() {
         queue.sync {
             isShuttingDown = true
+            sinkStopWork?.cancel()
+            sinkStopWork = nil
+            wantsSink = false
             stopSink()
             StreamingStateChannel.cancel(stateObserver)
             stateObserver = nil
         }
+    }
+
+    /// Opens or releases the sink in step with what a consumer actually wants.
+    /// Must run on ``queue``.
+    private func setSinkActive(_ active: Bool) {
+        sinkStopWork?.cancel()
+        sinkStopWork = nil
+        guard !isShuttingDown else { return }
+
+        if active {
+            wantsSink = true
+            startSinkIfNeeded()
+            return
+        }
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.isShuttingDown else { return }
+            self.sinkStopWork = nil
+            self.wantsSink = false
+            self.stopSink()
+        }
+        sinkStopWork = work
+        queue.asyncAfter(deadline: .now() + Self.sinkLinger, execute: work)
     }
 
     /// CoreMediaIO only refreshes a client's device list while that client is
@@ -124,10 +166,11 @@ final class ExtensionClient: NSObject, ObservableObject {
                 self.isConnected = true
                 self.isStalled = false
             }
-            // Opening the sink now pins the extension process for as long as the
-            // app runs. CoreMediaIO object IDs only stay valid while the
-            // extension lives, so this removes an entire class of races.
-            startSinkIfNeeded()
+            // Resolving the device does not open the sink. A started stream costs
+            // power whether or not frames flow, so the sink waits until something
+            // is actually streaming; discovery stays eager so the UI can report a
+            // connection and so a stale object ID is noticed early.
+            if wantsSink { startSinkIfNeeded() }
             return
         }
 
@@ -225,6 +268,11 @@ final class ExtensionClient: NSObject, ObservableObject {
     func send(pixelBuffer: CVPixelBuffer, hostTimeNanos: UInt64) {
         queue.async { [weak self] in
             guard let self, !self.isShuttingDown else { return }
+            // A frame is definitive evidence that a consumer wants output, so it
+            // beats the state notification if the two ever race. The pipeline
+            // only renders into the output buffer while streaming, so this cannot
+            // resurrect the sink while the app is idle.
+            if !self.wantsSink { self.setSinkActive(true) }
             self.startSinkIfNeeded()
             guard let bufferQueue = self.bufferQueue else { return }
 
