@@ -39,6 +39,7 @@
 		757DFADE3015346B2064E32B /* KeyLight.swift in Sources */ = {isa = PBXBuildFile; fileRef = C577DC1CA7798150D0D76319 /* KeyLight.swift */; };
 		7A09CB5FA7067546A04FA6EC /* FrameRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55CE1959F2AF39BECC4F107D /* FrameRelay.swift */; };
 		7BF83981DC00200F3E5D7D03 /* ImageAdjustments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7818105ABC0D7CC2C1C900CA /* ImageAdjustments.swift */; };
+		804BB0DD6A809A5C4FF240D0 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = F52B3CC92E86DA84B966FABE /* AppIcon.icns */; };
 		809FDC3E9563855CFABC6D34 /* IdleFrameRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9BD26EEBF2199F156C0627 /* IdleFrameRenderer.swift */; };
 		82760871D4D7C7DD70C05C11 /* ImageAdjustments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7818105ABC0D7CC2C1C900CA /* ImageAdjustments.swift */; };
 		827FB9B33D13BFA42D2966AB /* KeyLightTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0806B525BADCD6CEC6C615 /* KeyLightTests.swift */; };
@@ -142,6 +143,7 @@
 		E6A65500763225FA2538E7BB /* NumberFieldValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NumberFieldValue.swift; sourceTree = "<group>"; };
 		F02FCB9ECA5E4AACACEA18D2 /* OpenLensCamera.systemextension */ = {isa = PBXFileReference; explicitFileType = "wrapper.system-extension"; includeInIndex = 0; path = OpenLensCamera.systemextension; sourceTree = BUILT_PRODUCTS_DIR; };
 		F06EC23245E92E50968C3EFB /* VideoRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoRendererTests.swift; sourceTree = "<group>"; };
+		F52B3CC92E86DA84B966FABE /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		F729F773B1999F34579614A3 /* CaptureEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureEngine.swift; sourceTree = "<group>"; };
 		FA78641AD64C92AFAB9EAE45 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -234,6 +236,7 @@
 		9C1609B71ED39D6E83A01108 /* OpenLens */ = {
 			isa = PBXGroup;
 			children = (
+				F52B3CC92E86DA84B966FABE /* AppIcon.icns */,
 				7FE19205BEB26A6E17615832 /* Info.plist */,
 				5733E20ABD169ED31005BB11 /* OpenLens.entitlements */,
 				BB466D017E1386001D34D44A /* OpenLensApp.swift */,
@@ -312,6 +315,7 @@
 			buildConfigurationList = BB3D44B7AE34DEA8BBCC73B9 /* Build configuration list for PBXNativeTarget "OpenLens" */;
 			buildPhases = (
 				5E49FA90071A97047F0B4D97 /* Sources */,
+				DBEF19814B1BD0D84A72F57A /* Resources */,
 				FD0F7EEF7EBF71CA37EBD65D /* Embed Dependencies */,
 			);
 			buildRules = (
@@ -403,6 +407,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DBEF19814B1BD0D84A72F57A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				804BB0DD6A809A5C4FF240D0 /* AppIcon.icns in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		111B08993504712661F06EF4 /* Sources */ = {

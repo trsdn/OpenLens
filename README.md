@@ -202,6 +202,33 @@ every build with a timestamped build number. Quit and relaunch the app after
 installing — replacing the extension underneath a running app drops the frame
 transport.
 
+### The app icon
+
+`Sources/OpenLens/AppIcon.icns` is generated, not hand-drawn. Regenerate it after
+editing the artwork:
+
+```bash
+swift scripts/make-icon.swift
+```
+
+Two macOS 26 quirks are baked into that script, both found the hard way:
+
+- **No asset catalog.** `actool` always writes `CFBundleIconName` into the merged
+  `Info.plist`, and on macOS 26 that key routes icon lookup through the new icon
+  pipeline, where a classic `AppIcon.appiconset` is replaced by Apple's grey
+  "icon design template" placeholder. The app then ships with no icon at all.
+  A plain `.icns` referenced by `CFBundleIconFile` renders correctly on 14–26.
+- **No 1024 px slice.** An `ic10` entry makes macOS 26 treat the icon as legacy
+  artwork and shrink it onto a light grey plate instead of masking it edge to
+  edge like every other app. The largest slice is therefore 512 px.
+
+If the icon still looks like a pale blue grid after installing, that is a stale
+entry in the system icon cache, keyed by bundle path. Reboot, or:
+
+```bash
+sudo rm -rf /Library/Caches/com.apple.iconservices.store && killall Dock
+```
+
 Tests, including GPU tests that read back the rendered output and assert the crop
 and overlay compositing:
 
