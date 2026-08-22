@@ -127,15 +127,80 @@ struct InspectorView: View {
                     scale: .stops
                 )
                 AdjustmentSlider(
+                    title: "Black point",
+                    value: adjustmentBinding(\.blackPoint),
+                    range: ImageAdjustments.unitRange,
+                    onCommit: { model.commitAdjustments() },
+                    scale: .percent
+                )
+                AdjustmentSlider(
+                    title: "White point",
+                    value: adjustmentBinding(\.whitePoint),
+                    range: ImageAdjustments.unitRange,
+                    onCommit: { model.commitAdjustments() },
+                    scale: .percent
+                )
+                AdjustmentSlider(
+                    title: "Midtones",
+                    value: adjustmentBinding(\.midtones),
+                    range: ImageAdjustments.unitRange,
+                    onCommit: { model.commitAdjustments() },
+                    scale: .percent
+                )
+                AdjustmentSlider(
                     title: "Contrast",
                     value: adjustmentBinding(\.contrast),
                     range: ImageAdjustments.unitRange,
                     onCommit: { model.commitAdjustments() },
                     scale: .percent
                 )
+            } header: {
+                SectionHeader(
+                    "Tone",
+                    info: "Where the picture's black and white land, and how it is shaped "
+                        + "in between.\n\n"
+                        + "macOS exposes no exposure or white balance control for a capture "
+                        + "device, so everything in this section and the next is applied to "
+                        + "the picture itself rather than to the camera. It rides along in "
+                        + "the GPU pass that already crops every frame, which is why it "
+                        + "costs nothing measurable. Drag for a rough value — the slider "
+                        + "snaps to neutral near the middle — or type an exact number in "
+                        + "the field. Double-click a label to put that one control back to "
+                        + "neutral. Each scene keeps its own settings.\n\n"
+                        + "Most cameras hand over a signal whose darkest pixel is not "
+                        + "actually black, which is what makes a picture look milky no "
+                        + "matter how much contrast you add. Black point is the fix: raise "
+                        + "it until the shadows close, and the picture gains depth without "
+                        + "anything else moving.\n\n"
+                        + "White point does the same at the top, but has far less room — "
+                        + "a lit face is usually close to white already, and pulling the "
+                        + "white point down burns the brightest skin to a flat patch. "
+                        + "Midtones then brightens or darkens everything between the two "
+                        + "end points, leaving both of them where you put them.\n\n"
+                        + "Contrast is an S-curve rather than a straight slope, so it "
+                        + "steepens the midtones and fades out towards both ends. It "
+                        + "cannot clip a highlight."
+                )
+            }
+
+            Section {
                 AdjustmentSlider(
                     title: "White balance",
                     value: adjustmentBinding(\.temperature),
+                    range: ImageAdjustments.unitRange,
+                    onCommit: { model.commitAdjustments() },
+                    scale: .warmth
+                )
+                AdjustmentSlider(
+                    title: "Shadow tint",
+                    value: adjustmentBinding(\.shadowWarmth),
+                    range: ImageAdjustments.unitRange,
+                    onCommit: { model.commitAdjustments() },
+                    scale: .warmth
+                )
+                AdjustmentSlider(
+                    title: "Highlight tint",
+                    value: adjustmentBinding(\.highlightWarmth),
                     range: ImageAdjustments.unitRange,
                     onCommit: { model.commitAdjustments() },
                     scale: .warmth
@@ -153,17 +218,17 @@ struct InspectorView: View {
             } header: {
                 SectionHeader(
                     "Colour",
-                    info: "macOS exposes no exposure or white balance control for a capture "
-                        + "device, so these are applied to the picture itself rather than to "
-                        + "the camera. They ride along in the GPU pass that already crops "
-                        + "every frame, which is why they cost nothing measurable.\n\n"
-                        + "Drag for a rough value — the slider snaps to neutral near the "
-                        + "middle — or type an exact number in the field. Double-click a "
-                        + "label to put that one control back to neutral.\n\n"
-                        + "Correct at the camera first where you can — this cannot recover "
-                        + "detail that was never captured. It is here to match a second "
-                        + "camera to your main one, or to rescue a room whose light you "
-                        + "cannot change. Each scene keeps its own settings."
+                    info: "White balance shifts the whole picture between amber and blue. "
+                        + "Shadow tint and Highlight tint do the same to one end of the "
+                        + "scale only.\n\n"
+                        + "Those two exist because a room rarely has a single colour "
+                        + "temperature. A warm lamp on your face and cooler daylight "
+                        + "filling the shadows leave a cast that runs in opposite "
+                        + "directions at opposite ends of the picture, and no single white "
+                        + "balance can correct both — warm it up for the shadows and the "
+                        + "face turns orange. Warm the shadows on their own instead and "
+                        + "black becomes black again.\n\n"
+                        + "Reset puts every control in both sections back to neutral."
                 )
             }
 

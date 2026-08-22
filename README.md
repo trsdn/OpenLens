@@ -31,11 +31,13 @@ not touch audio, and has no timeline, no projects and no accounts.
   to resize it, double-click to reset the size — or type exact percentages in
   the inspector and snap it to any of nine positions. The aspect ratio comes
   from the image, and it is composited in the same GPU pass.
-- **Exposure, contrast, white balance and saturation** for cameras that have no
-  controls of their own — HDMI grabbers like a Cam Link expose none, and macOS
-  offers no manual values either. Four sliders that snap back to neutral in the
-  middle, each with a field you can type an exact value into, folded into the
-  render pass that already runs, so they cost nothing measurable.
+- **Tone and colour correction** for cameras that have no controls of their own —
+  HDMI grabbers like a Cam Link expose none, and macOS offers no manual values
+  either. Exposure, black point, white point, midtones and an S-curve contrast,
+  plus white balance, separate shadow and highlight tints, and saturation. Nine
+  sliders that snap back to neutral in the middle, each with a field you can type
+  an exact value into, folded into the render pass that already runs, so they
+  cost nothing measurable.
 - **Cheap.** Around 17 % of a single core — roughly 1.4 % of an M4 Pro — at
   1080p30 while a conferencing app is actually pulling frames. The capture
   session does not run at all when nobody is looking, and the preview pass is
@@ -130,8 +132,9 @@ Three AVFoundation traps sit between asking for 4K and getting it, all found the
 
 ### Colour correction is free
 
-Exposure, contrast, white balance and saturation happen inside the fragment shader that
-already runs, so they cost no extra pass, no extra buffer and no extra CPU work. Measured
+Exposure, levels, contrast, white balance, split tinting and saturation happen inside the
+fragment shader that already runs, so they cost no extra pass, no extra buffer and no extra
+CPU work. Measured
 over two 60-second windows at 1080p30 with the preview visible: **7.52 %** and **7.63 %**
 of one core, against **7.97 %** for the same build without the colour code — a difference
 inside the noise.

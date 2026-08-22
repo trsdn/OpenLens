@@ -342,6 +342,62 @@ final class VideoRendererTests: XCTestCase {
         return pixelBuffer
     }
 
+    /// A 1280x720 neutral grey ramp, dark on the left and light on the right.
+    ///
+    /// The red/blue fixture above cannot exercise the tonal controls: both of
+    /// its halves are dark and saturated, so "did the shadows move" and "did
+    /// the highlights survive" have nowhere to be measured. It also cannot show
+    /// that the shadow and highlight tints stay in their own half of the scale,
+    /// because a tint is only visible against grey.
+    private func makeGreyRampSourceBuffer() throws -> CVPixelBuffer {
+        let width = 1280
+        let height = 720
+        var buffer: CVPixelBuffer?
+        let attributes: [CFString: Any] = [
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
+            kCVPixelBufferMetalCompatibilityKey: true
+        ]
+        XCTAssertEqual(
+            CVPixelBufferCreate(
+                kCFAllocatorDefault,
+                width,
+                height,
+                kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                attributes as CFDictionary,
+                &buffer
+            ),
+            kCVReturnSuccess
+        )
+        let pixelBuffer = try XCTUnwrap(buffer)
+
+        CVPixelBufferLockBaseAddress(pixelBuffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
+
+        let lumaBase = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0))
+        let lumaStride = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0)
+        for y in 0..<height {
+            let row = lumaBase.advanced(by: y * lumaStride).assumingMemoryBound(to: UInt8.self)
+            for x in 0..<width {
+                let fraction = Double(x) / Double(width - 1)
+                row[x] = UInt8((fraction * 219 + 16).rounded())
+            }
+        }
+
+        // 128/128 is the chroma origin, so every pixel is a true neutral and
+        // any colour in the output came from the grade rather than the source.
+        let chromaBase = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 1))
+        let chromaStride = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 1)
+        for y in 0..<(height / 2) {
+            let row = chromaBase.advanced(by: y * chromaStride)
+                .assumingMemoryBound(to: UInt8.self)
+            for x in 0..<(width / 2) {
+                row[x * 2] = 128
+                row[x * 2 + 1] = 128
+            }
+        }
+        return pixelBuffer
+    }
+
     private func fullFrame(
         _ pixelBuffer: CVPixelBuffer,
         _ adjustments: ImageAdjustments
@@ -411,6 +467,62 @@ final class VideoRendererTests: XCTestCase {
             of: try render(fullFrame(try makeSourceBuffer(), ImageAdjustments(exposure: 1)))
         )
         XCTAssertGreaterThan(brighter, neutral + 10)
+    }
+
+    // MARK: - Levels, contrast curve and split tinting
+
+    func testBlackPointDeepensTheShadowsAndLeavesTheHighlightsAlone() throws {
+        let neutral = try render(fullFrame(try makeGreyRampSourceBuffer(), .neutral))
+        let graded = try render(
+            fullFrame(try makeGreyRampSourceBuffer(), ImageAdjustments(blackPoint: 0.5))
+        )
+        // The dark end is what the control is for.
+        XCTAssertLessThan(
+            try luma(of: graded, atX: 0.15), try luma(of: neutral, atX: 0.15) - 10
+        )
+        // White is an anchor of the mapping, so the bright end must barely move.
+        XCTAssertEqual(
+            try luma(of: graded, atX: 0.98),
+            try luma(of: neutral, atX: 0.98),
+            accuracy: 3
+        )
+    }
+
+    func testContrastDoesNotClipTheHighlightsTheWayAStraightSlopeWould() throws {
+        let neutral = try render(fullFrame(try makeGreyRampSourceBuffer(), .neutral))
+        let graded = try render(
+            fullFrame(try makeGreyRampSourceBuffer(), ImageAdjustments(contrast: 1))
+        )
+        // Midtones steepen, which is the point of the control.
+        XCTAssertGreaterThan(
+            try luma(of: graded, atX: 0.75), try luma(of: neutral, atX: 0.75) + 5
+        )
+        XCTAssertLessThan(try luma(of: graded, atX: 0.25), try luma(of: neutral, atX: 0.25) - 5)
+        // A linear (y - 0.5) * 1.5 would drive everything above ~0.83 to white
+        // and flatten the brightest skin into a single flat patch. The curve
+        // has to leave the top of the ramp separable instead.
+        XCTAssertGreaterThan(try luma(of: graded, atX: 1.0), try luma(of: graded, atX: 0.9) + 2)
+    }
+
+    func testShadowAndHighlightTintsStayInTheirOwnHalfOfTheScale() throws {
+        let warmShadows = try render(
+            fullFrame(try makeGreyRampSourceBuffer(), ImageAdjustments(shadowWarmth: 1))
+        )
+        let dark = try sample(warmShadows, atX: 0.08, y: 0.5)
+        let light = try sample(warmShadows, atX: 0.95, y: 0.5)
+        // The dark end picks up the warmth...
+        XCTAssertGreaterThan(Int(dark.r), Int(dark.b) + 8)
+        // ...and the light end must not, or this would just be white balance
+        // under another name and the split would buy nothing.
+        XCTAssertEqual(Int(light.r), Int(light.b), accuracy: 6)
+
+        let coolHighlights = try render(
+            fullFrame(try makeGreyRampSourceBuffer(), ImageAdjustments(highlightWarmth: -1))
+        )
+        let brightPixel = try sample(coolHighlights, atX: 0.95, y: 0.5)
+        let darkPixel = try sample(coolHighlights, atX: 0.08, y: 0.5)
+        XCTAssertGreaterThan(Int(brightPixel.b), Int(brightPixel.r) + 8)
+        XCTAssertEqual(Int(darkPixel.r), Int(darkPixel.b), accuracy: 6)
     }
 
     /// Reads the raw luma byte, which is what exposure and contrast move.

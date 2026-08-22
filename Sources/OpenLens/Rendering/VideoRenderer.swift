@@ -13,9 +13,14 @@ struct RenderUniforms {
     var lumaOffset: Float
     var lumaScale: Float
     var exposureGain: Float
-    var contrastGain: Float
+    var blackLevel: Float
+    var levelsGain: Float
+    var midtoneExponent: Float
+    var contrastAmount: Float
     var saturationGain: Float
     var temperatureShift: Float
+    var shadowShift: Float
+    var highlightShift: Float
 }
 
 /// The whole image pipeline: one Metal pass that crops, scales and composites.
@@ -272,9 +277,14 @@ final class VideoRenderer {
             lumaOffset: isFullRange ? 0.0 : 16.0 / 255.0,
             lumaScale: isFullRange ? 1.0 : 255.0 / 219.0,
             exposureGain: Float(frame.adjustments.exposureGain),
-            contrastGain: Float(frame.adjustments.contrastGain),
+            blackLevel: Float(frame.adjustments.blackLevel),
+            levelsGain: Float(frame.adjustments.levelsGain),
+            midtoneExponent: Float(frame.adjustments.midtoneExponent),
+            contrastAmount: Float(frame.adjustments.contrastAmount),
             saturationGain: Float(frame.adjustments.saturationGain),
-            temperatureShift: Float(frame.adjustments.temperatureShift)
+            temperatureShift: Float(frame.adjustments.temperatureShift),
+            shadowShift: Float(frame.adjustments.shadowShift),
+            highlightShift: Float(frame.adjustments.highlightShift)
         )
 
         for pass in passes {
