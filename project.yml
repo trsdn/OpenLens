@@ -90,3 +90,8 @@ schemes:
       config: Debug
       targets:
         - OpenLensTests
+    # Stated rather than left to the default, because the release script
+    # archives this scheme and a Debug archive would be signed and shipped
+    # without anything failing.
+    archive:
+      config: Release

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Anything other than developer-id re-signs the app with a development
+	     certificate, which the notary service rejects. -->
+	<key>method</key>
+	<string>developer-id</string>
+	<key>teamID</key>
+	<string>G69Z5BNY97</string>
+	<!-- Automatic so Xcode can issue the Developer ID profile that carries the
+	     system-extension.install entitlement; there is no way to ship the
+	     extension without one. -->
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<!-- Export to disk. Notarising the DMG rather than the bare app is what
+	     lets the stapled ticket travel with the download. -->
+	<key>destination</key>
+	<string>export</string>
+</dict>
+</plist>
