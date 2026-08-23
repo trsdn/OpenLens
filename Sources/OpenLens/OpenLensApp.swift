@@ -13,6 +13,12 @@ struct OpenLensApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
 
+            // Without this there is no Edit menu at all, and a menu item is
+            // what carries the shortcut: ⌘A in a number field would do
+            // nothing, so typing a value appended to it instead of replacing
+            // it.
+            TextEditingCommands()
+
             CommandMenu("Scene") {
                 // Option-number is deliberately not a plain number: the shortcut
                 // has to survive being pressed while a text field has focus.

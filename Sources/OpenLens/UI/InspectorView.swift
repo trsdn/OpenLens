@@ -440,6 +440,15 @@ struct AdjustmentSlider: View {
     /// `onEditingChanged` was silently lost on the next launch.
     @State private var commitTask: Task<Void, Never>?
 
+    /// The number as typed, held verbatim until the edit ends.
+    ///
+    /// Parsing on every keystroke cannot work: on the way to 56 the field
+    /// briefly holds 5, which is a legal value, so it was clamped and written
+    /// back under the cursor — and the remaining digits then landed on the
+    /// clamped number. Typing 56 into a field showing 42 produced 100.
+    @State private var editingText: String?
+    @FocusState private var isEditing: Bool
+
     /// Three percent of the travel — wide enough to catch a mouse, narrow
     /// enough that the knob does not feel stuck.
     private var snapDistance: Double { (range.upperBound - range.lowerBound) * 0.03 }
@@ -451,15 +460,28 @@ struct AdjustmentSlider: View {
         )
     }
 
-    private var fieldBinding: Binding<Double> {
+    private var displayText: String {
+        (value * scale.displayScale)
+            .formatted(.number.precision(.fractionLength(scale.fractionLength)))
+    }
+
+    private var fieldBinding: Binding<String> {
         Binding(
-            get: { value * scale.displayScale },
-            set: { typed in
-                let raw = typed / scale.displayScale
-                value = min(max(raw, range.lowerBound), range.upperBound)
-                commitNow()
-            }
+            get: { editingText ?? displayText },
+            set: { editingText = $0 }
         )
+    }
+
+    /// Accepts both decimal separators, so a value typed on a German keyboard
+    /// is not silently discarded.
+    static func parse(_ text: String) -> Double? {
+        NumberFieldValue.parse(text)
+    }
+
+    /// Clamps once, at the end. An out-of-range number is pinned to the
+    /// nearest end rather than rejected, which is what a dragged slider does.
+    static func clamp(_ typed: Double, scale: AdjustmentScale, range: ClosedRange<Double>) -> Double {
+        NumberFieldValue.clamp(typed, displayScale: scale.displayScale, range: range)
     }
 
     var body: some View {
@@ -478,11 +500,13 @@ struct AdjustmentSlider: View {
                         .font(.caption)
                         .lineLimit(1)
                 }
-                TextField(
-                    "",
-                    value: fieldBinding,
-                    format: .number.precision(.fractionLength(scale.fractionLength))
-                )
+                TextField("", text: fieldBinding)
+                .focused($isEditing)
+                .onSubmit { commitText() }
+                .onChange(of: isEditing) { _, editing in
+                    if !editing { commitText() }
+                }
+                .onExitCommand { editingText = nil; isEditing = false }
                 .multilineTextAlignment(.trailing)
                 .monospacedDigit()
                 .frame(width: 40)
@@ -512,6 +536,16 @@ struct AdjustmentSlider: View {
         commitTask?.cancel()
         commitTask = nil
         onCommit()
+    }
+
+    /// Runs once the edit is over, not per keystroke. A field left empty or
+    /// holding something unparseable snaps back to the current value rather
+    /// than resetting the control to zero.
+    private func commitText() {
+        defer { editingText = nil }
+        guard let typed = editingText.flatMap(Self.parse) else { return }
+        value = Self.clamp(typed, scale: scale, range: range)
+        commitNow()
     }
 }
 
