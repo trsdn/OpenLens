@@ -5,13 +5,23 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @ObservedObject var model: AppModel
 
+    /// The inspector is draggable because the sliders are the reason to widen
+    /// it: at the 280pt default the track is about 120pt for a ±100 range, so a
+    /// single pixel is nearly a whole percent and precise dragging is
+    /// impossible. Pulling the divider out buys real resolution.
+    @AppStorage("inspector.width") private var inspectorWidth: Double = 280
+    @State private var widthAtDragStart: Double?
+
+    private static let minInspectorWidth: Double = 260
+    private static let maxInspectorWidth: Double = 560
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 previewArea
-                Divider()
+                inspectorDivider
                 InspectorView(model: model)
-                    .frame(width: 280)
+                    .frame(width: inspectorWidth)
             }
             Divider()
             SceneStrip(model: model)
@@ -19,6 +29,34 @@ struct ContentView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await model.start() }
         .onDisappear { model.shutdown() }
+    }
+
+    /// A hairline with a wider invisible grab area, so the target is hittable
+    /// without drawing a thick bar.
+    private var inspectorDivider: some View {
+        Divider()
+            .overlay(alignment: .center) {
+                Rectangle()
+                    .fill(.clear)
+                    .frame(width: 9)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { drag in
+                                let start = widthAtDragStart ?? inspectorWidth
+                                widthAtDragStart = start
+                                inspectorWidth = min(
+                                    Self.maxInspectorWidth,
+                                    max(Self.minInspectorWidth, start - drag.translation.width)
+                                )
+                            }
+                            .onEnded { _ in widthAtDragStart = nil }
+                    )
+                    .accessibilityHidden(true)
+            }
     }
 
     private var previewArea: some View {

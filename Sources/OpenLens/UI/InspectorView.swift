@@ -6,6 +6,20 @@ struct InspectorView: View {
     @ObservedObject private var scenes: SceneStore
     @State private var sceneName = ""
 
+    // Which sections are open, remembered across launches.
+    //
+    // The panel holds roughly 1,400pt of controls in a window that offers
+    // around 900, so something is always out of sight. Rather than leave that
+    // to scrolling, the sections you set once and never touch again start
+    // shut, and the ten tone and colour sliders — the only controls touched
+    // per session — start open and fit without scrolling at all.
+    @AppStorage("inspector.expanded.scene") private var sceneExpanded = false
+    @AppStorage("inspector.expanded.zoom") private var zoomExpanded = false
+    @AppStorage("inspector.expanded.tone") private var toneExpanded = true
+    @AppStorage("inspector.expanded.colour") private var colourExpanded = true
+    @AppStorage("inspector.expanded.output") private var outputExpanded = false
+    @AppStorage("inspector.expanded.splitTone") private var splitToneExpanded = false
+
     init(model: AppModel) {
         self.model = model
         self.scenes = model.scenes
@@ -13,7 +27,7 @@ struct InspectorView: View {
 
     var body: some View {
         Form {
-            Section {
+            Section(isExpanded: $sceneExpanded) {
                 TextField("Name", text: $sceneName)
                     .onSubmit { model.renameSelectedScene(sceneName) }
 
@@ -61,14 +75,15 @@ struct InspectorView: View {
                     info: "Scenes are your presets. Camera, zoom, mirror and overlay are "
                         + "saved into the selected scene as you change them — there is no "
                         + "save button. Duplicate takes a snapshot of the current look as a "
-                        + "new scene, and ⌥1…⌥9 switch between them even while you are in a call."
+                        + "new scene, and ⌥1…⌥9 switch between them even while you are in a call.",
+                    summary: sceneSummary
                 )
             }
 
-            Section {
-                // Two rows, not one: the inspector is only ~240pt wide, and a
-                // slider sharing a row with a text field and two buttons collapses
-                // to a stub you cannot aim at.
+            Section(isExpanded: $zoomExpanded) {
+                // Two rows, not one: at its narrowest the inspector is only
+                // ~240pt wide, and a slider sharing a row with a text field and
+                // two buttons collapses to a stub you cannot aim at.
                 LabeledContent("Level") {
                     HStack(spacing: 4) {
                         TextField(
@@ -114,11 +129,13 @@ struct InspectorView: View {
                         + "\"Stays sharp up to\" is the point where the crop has used up every "
                         + "real pixel the camera delivers. Beyond it the picture is enlarged "
                         + "rather than cropped and turns soft, which the badge on the picture "
-                        + "calls out. Raising Capture quality pushes that limit further out."
+                        + "calls out. Raising Capture quality pushes that limit further out.",
+                    summary: String(format: "%.1f×", model.effectiveZoom),
+                    summaryIsActive: model.effectiveZoom != 1
                 )
             }
 
-            Section {
+            Section(isExpanded: $toneExpanded) {
                 AdjustmentSlider(
                     title: "Exposure",
                     value: adjustmentBinding(\.exposure),
@@ -179,11 +196,13 @@ struct InspectorView: View {
                         + "end points, leaving both of them where you put them.\n\n"
                         + "Contrast is an S-curve rather than a straight slope, so it "
                         + "steepens the midtones and fades out towards both ends. It "
-                        + "cannot clip a highlight."
+                        + "cannot clip a highlight.",
+                    summary: Self.changeSummary(count: toneChangeCount),
+                    summaryIsActive: toneChangeCount > 0
                 )
             }
 
-            Section {
+            Section(isExpanded: $colourExpanded) {
                 AdjustmentSlider(
                     title: "White balance",
                     value: adjustmentBinding(\.temperature),
@@ -198,20 +217,40 @@ struct InspectorView: View {
                     onCommit: { model.commitAdjustments() },
                     scale: .tint
                 )
-                AdjustmentSlider(
-                    title: "Shadow tint",
-                    value: adjustmentBinding(\.shadowWarmth),
-                    range: ImageAdjustments.unitRange,
-                    onCommit: { model.commitAdjustments() },
-                    scale: .warmth
-                )
-                AdjustmentSlider(
-                    title: "Highlight tint",
-                    value: adjustmentBinding(\.highlightWarmth),
-                    range: ImageAdjustments.unitRange,
-                    onCommit: { model.commitAdjustments() },
-                    scale: .warmth
-                )
+                // Split toning is the one pair here that a normal session never
+                // needs — it only earns its place when the key light and the
+                // ambient light disagree — so it is folded away by default
+                // rather than costing two rows in every session.
+                DisclosureGroup(isExpanded: $splitToneExpanded) {
+                    AdjustmentSlider(
+                        title: "Shadow tint",
+                        value: adjustmentBinding(\.shadowWarmth),
+                        range: ImageAdjustments.unitRange,
+                        onCommit: { model.commitAdjustments() },
+                        scale: .warmth
+                    )
+                    AdjustmentSlider(
+                        title: "Highlight tint",
+                        value: adjustmentBinding(\.highlightWarmth),
+                        range: ImageAdjustments.unitRange,
+                        onCommit: { model.commitAdjustments() },
+                        scale: .warmth
+                    )
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Split toning")
+                        // A shut group must not hide a value that is doing
+                        // something, or the picture ends up with a cast whose
+                        // cause is nowhere on screen.
+                        if splitToneIsActive {
+                            Circle()
+                                .fill(.tint)
+                                .frame(width: 5, height: 5)
+                                .accessibilityLabel("Adjusted")
+                        }
+                    }
+                }
+
                 AdjustmentSlider(
                     title: "Saturation",
                     value: adjustmentBinding(\.saturation),
@@ -246,23 +285,18 @@ struct InspectorView: View {
                         + "balance can correct both — warm it up for the shadows and the "
                         + "face turns orange. Warm the shadows on their own instead and "
                         + "black becomes black again.\n\n"
-                        + "Reset puts every control in both sections back to neutral."
+                        + "Reset puts every control in both sections back to neutral.",
+                    summary: Self.changeSummary(count: colourChangeCount),
+                    summaryIsActive: colourChangeCount > 0
                 )
             }
 
-            Section {
+            // Preview and Overlay were a section each, which cost two headers
+            // for three controls. They belong together: both are about what
+            // leaves the app rather than how the picture is graded.
+            Section(isExpanded: $outputExpanded) {
                 Toggle("Show preview", isOn: $model.previewEnabled)
-            } header: {
-                SectionHeader(
-                    "Preview",
-                    info: "Turning the preview off skips one render pass per frame and frees "
-                        + "the window. The virtual camera is unaffected. On Apple silicon the "
-                        + "saving is well under a percent, so treat this as a way to clear "
-                        + "the screen rather than a performance fix."
-                )
-            }
 
-            Section {
                 Toggle("Show overlay", isOn: overlayEnabledBinding)
                     .disabled(scenes.overlayURL == nil)
 
@@ -289,12 +323,19 @@ struct InspectorView: View {
                 }
             } header: {
                 SectionHeader(
-                    "Overlay",
-                    info: "A PNG with transparency composited on top of the picture in the "
-                        + "same GPU pass, so it is free. Use it for a logo or a lower third. "
-                        + "Drag it in the picture to move it and pull a corner to resize it; "
-                        + "double-click it to reset the size. Dragging anywhere else still "
-                        + "pans the crop. The aspect ratio comes from the image and is kept."
+                    "Output",
+                    info: "Turning the preview off skips one render pass per frame and frees "
+                        + "the window. The virtual camera is unaffected. On Apple silicon the "
+                        + "saving is well under a percent, so treat this as a way to clear "
+                        + "the screen rather than a performance fix.\n\n"
+                        + "The overlay is a PNG with transparency composited on top of the "
+                        + "picture in the same GPU pass, so it is free. Use it for a logo or "
+                        + "a lower third. Drag it in the picture to move it and pull a corner "
+                        + "to resize it; double-click it to reset the size. Dragging anywhere "
+                        + "else still pans the crop. The aspect ratio comes from the image "
+                        + "and is kept.",
+                    summary: outputSummary,
+                    summaryIsActive: !model.previewEnabled || (scenes.selectedScene?.overlayEnabled ?? false)
                 )
             }
         }
@@ -303,6 +344,49 @@ struct InspectorView: View {
         .onChange(of: scenes.selectedSceneID) { _, _ in
             sceneName = scenes.selectedScene?.name ?? ""
         }
+    }
+
+    // MARK: - Section summaries
+
+    /// What a shut section reports about itself.
+    private var sceneSummary: String? {
+        model.devices.first { $0.id == scenes.selectedScene?.deviceID }?.name
+    }
+
+    private var outputSummary: String {
+        var parts: [String] = []
+        if !model.previewEnabled { parts.append("preview off") }
+        if scenes.selectedScene?.overlayEnabled == true { parts.append("overlay on") }
+        return parts.isEmpty ? "Default" : parts.joined(separator: ", ")
+    }
+
+    private var toneChangeCount: Int {
+        Self.nonNeutralCount(
+            model.adjustments,
+            [\.exposure, \.blackPoint, \.whitePoint, \.midtones, \.contrast]
+        )
+    }
+
+    private var colourChangeCount: Int {
+        Self.nonNeutralCount(
+            model.adjustments,
+            [\.temperature, \.tint, \.shadowWarmth, \.highlightWarmth, \.saturation]
+        )
+    }
+
+    private var splitToneIsActive: Bool {
+        model.adjustments.shadowWarmth != 0 || model.adjustments.highlightWarmth != 0
+    }
+
+    private static func nonNeutralCount(
+        _ adjustments: ImageAdjustments,
+        _ keyPaths: [KeyPath<ImageAdjustments, Double>]
+    ) -> Int {
+        keyPaths.count { adjustments[keyPath: $0] != 0 }
+    }
+
+    private static func changeSummary(count: Int) -> String {
+        count == 0 ? "Neutral" : "\(count) adjusted"
     }
 
     private func chooseOverlay() {
@@ -493,6 +577,16 @@ struct AdjustmentSlider: View {
                         commitNow()
                     }
                     .help("Double-click the label to reset this to neutral.")
+                // Ten sliders in a column look identical at a glance, and the
+                // number alone does not separate "0" from "not touched" quickly
+                // enough. The dot answers "what have I actually changed?"
+                // without reading a single figure.
+                if value != 0 {
+                    Circle()
+                        .fill(.tint)
+                        .frame(width: 5, height: 5)
+                        .accessibilityLabel("Adjusted")
+                }
                 Spacer(minLength: 0)
                 if let caption = scale.caption(value) {
                     Text(caption)
