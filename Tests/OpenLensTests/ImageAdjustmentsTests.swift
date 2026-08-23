@@ -17,6 +17,7 @@ final class ImageAdjustmentsTests: XCTestCase {
         XCTAssertEqual(neutral.contrastAmount, 0, accuracy: 1e-12)
         XCTAssertEqual(neutral.saturationGain, 1, accuracy: 1e-12)
         XCTAssertEqual(neutral.temperatureShift, 0, accuracy: 1e-12)
+        XCTAssertEqual(neutral.tintShift, 0, accuracy: 1e-12)
         XCTAssertEqual(neutral.shadowShift, 0, accuracy: 1e-12)
         XCTAssertEqual(neutral.highlightShift, 0, accuracy: 1e-12)
     }
@@ -123,8 +124,9 @@ final class ImageAdjustmentsTests: XCTestCase {
         // Chroma only spans +/-0.5 in total. The shadow and highlight zones
         // never overlap, so the worst case is the global shift plus whichever
         // of the two is larger.
-        let stacked = ImageAdjustments(temperature: 1, shadowWarmth: 1, highlightWarmth: 1)
+        let stacked = ImageAdjustments(temperature: 1, tint: 1, shadowWarmth: 1, highlightWarmth: 1)
         let worstCase = abs(stacked.temperatureShift)
+            + abs(stacked.tintShift)
             + max(abs(stacked.shadowShift), abs(stacked.highlightShift))
         XCTAssertLessThan(worstCase, 0.25)
     }
@@ -132,6 +134,50 @@ final class ImageAdjustmentsTests: XCTestCase {
     func testTemperatureIsSignedAroundNeutral() {
         XCTAssertGreaterThan(ImageAdjustments(temperature: 0.5).temperatureShift, 0)
         XCTAssertLessThan(ImageAdjustments(temperature: -0.5).temperatureShift, 0)
+    }
+
+    func testTintIsSignedAroundNeutral() {
+        XCTAssertEqual(ImageAdjustments.neutral.tintShift, 0, accuracy: 1e-12)
+        XCTAssertGreaterThan(ImageAdjustments(tint: 0.5).tintShift, 0)
+        XCTAssertLessThan(ImageAdjustments(tint: -0.5).tintShift, 0)
+    }
+
+    func testTintSharesTheTemperatureScale() {
+        // Both are white balance controls sitting next to each other, so the
+        // same number typed into either has to mean the same size of shift.
+        let value = 0.4
+        XCTAssertEqual(
+            ImageAdjustments(tint: value).tintShift,
+            ImageAdjustments(temperature: value).temperatureShift,
+            accuracy: 1e-12
+        )
+    }
+
+    func testTintMovesGreenAgainstRedAndBlue() {
+        // The point of the second axis: temperature trades red against blue and
+        // barely moves green, tint moves green against both. Without that
+        // difference the control would be a duplicate of white balance.
+        //
+        // Reproduces the shader's chroma maths on the BT.601 matrix it uses.
+        func rgbDelta(cb: Double, cr: Double) -> (r: Double, g: Double, b: Double) {
+            (r: 1.402 * cr, g: -0.344136 * cb - 0.714136 * cr, b: 1.772 * cb)
+        }
+        // Warm: Cb down, Cr up.
+        let warmShift = ImageAdjustments(temperature: 0.5).temperatureShift
+        let warm = rgbDelta(cb: -warmShift, cr: warmShift)
+        XCTAssertGreaterThan(warm.r, 0)
+        XCTAssertLessThan(warm.b, 0)
+        XCTAssertLessThan(abs(warm.g), abs(warm.r) / 3)
+
+        // Magenta: both components up together.
+        let tintShift = ImageAdjustments(tint: 0.5).tintShift
+        let magenta = rgbDelta(cb: tintShift, cr: tintShift)
+        XCTAssertGreaterThan(magenta.r, 0)
+        XCTAssertGreaterThan(magenta.b, 0)
+        XCTAssertLessThan(magenta.g, 0)
+        // Green is the axis this control exists to reach, so it has to move it
+        // substantially rather than incidentally.
+        XCTAssertGreaterThan(abs(magenta.g), abs(warm.g) * 2)
     }
 
     func testShadowAndHighlightTintsShareTheTemperatureScale() {
@@ -162,6 +208,7 @@ final class ImageAdjustmentsTests: XCTestCase {
             contrast: -0.25,
             saturation: 0.75,
             temperature: -0.5,
+            tint: 0.4,
             shadowWarmth: 0.35,
             highlightWarmth: -0.15
         )
@@ -185,6 +232,7 @@ final class ImageAdjustmentsTests: XCTestCase {
         XCTAssertEqual(decoded.blackPoint, 0, accuracy: 1e-12)
         XCTAssertEqual(decoded.whitePoint, 0, accuracy: 1e-12)
         XCTAssertEqual(decoded.midtones, 0, accuracy: 1e-12)
+        XCTAssertEqual(decoded.tint, 0, accuracy: 1e-12)
         XCTAssertEqual(decoded.shadowWarmth, 0, accuracy: 1e-12)
         XCTAssertEqual(decoded.highlightWarmth, 0, accuracy: 1e-12)
     }

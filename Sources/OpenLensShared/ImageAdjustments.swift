@@ -34,6 +34,15 @@ public struct ImageAdjustments: Codable, Equatable, Sendable {
     public var saturation: Double = 0
     /// -1 cools towards blue, +1 warms towards amber.
     public var temperature: Double = 0
+    /// The second white balance axis: -1 towards green, +1 towards magenta.
+    ///
+    /// Separate from `temperature` because the two are independent. Amber/blue
+    /// is what changes when a light source gets hotter or colder; green/magenta
+    /// is what a light source does when it is not a black body at all —
+    /// fluorescent and LED lighting, and any camera whose picture profile
+    /// reshapes skin tones. A cast on this axis cannot be corrected by
+    /// temperature at any setting, which is why cameras have both.
+    public var tint: Double = 0
     /// White balance for the shadows alone, on the same warm/cool axis.
     public var shadowWarmth: Double = 0
     /// White balance for the highlights alone.
@@ -47,6 +56,7 @@ public struct ImageAdjustments: Codable, Equatable, Sendable {
         contrast: Double = 0,
         saturation: Double = 0,
         temperature: Double = 0,
+        tint: Double = 0,
         shadowWarmth: Double = 0,
         highlightWarmth: Double = 0
     ) {
@@ -57,6 +67,7 @@ public struct ImageAdjustments: Codable, Equatable, Sendable {
         self.contrast = contrast
         self.saturation = saturation
         self.temperature = temperature
+        self.tint = tint
         self.shadowWarmth = shadowWarmth
         self.highlightWarmth = highlightWarmth
     }
@@ -77,6 +88,7 @@ public struct ImageAdjustments: Codable, Equatable, Sendable {
         contrast = try value(.contrast)
         saturation = try value(.saturation)
         temperature = try value(.temperature)
+        tint = try value(.tint)
         shadowWarmth = try value(.shadowWarmth)
         highlightWarmth = try value(.highlightWarmth)
     }
@@ -136,7 +148,20 @@ public struct ImageAdjustments: Codable, Equatable, Sendable {
     /// Kept small: chroma only spans +/-0.5 in total, so 0.06 is already a
     /// pronounced shift and anything larger clips colour before the slider
     /// reaches its end.
+    ///
+    /// The shader scales this by the pixel's luma, so it behaves like the
+    /// per-channel gain a camera applies rather than a flat offset — see
+    /// `adjust_chroma`. The number here is therefore the shift at full white.
     public var temperatureShift: Double { temperature * 0.06 }
+
+    /// Chroma offset applied towards both Cb and Cr at once.
+    ///
+    /// Same scale as `temperatureShift` so that a given percentage means a
+    /// comparable amount of correction on either axis, even though the two move
+    /// the primaries differently: temperature trades red against blue and barely
+    /// touches green, whereas tint moves red and blue together and green against
+    /// them.
+    public var tintShift: Double { tint * 0.06 }
 
     /// The same shift, weighted towards the dark end of the picture.
     ///

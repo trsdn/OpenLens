@@ -19,6 +19,7 @@ struct RenderUniforms {
     var contrastAmount: Float
     var saturationGain: Float
     var temperatureShift: Float
+    var tintShift: Float
     var shadowShift: Float
     var highlightShift: Float
 }
@@ -283,6 +284,7 @@ final class VideoRenderer {
             contrastAmount: Float(frame.adjustments.contrastAmount),
             saturationGain: Float(frame.adjustments.saturationGain),
             temperatureShift: Float(frame.adjustments.temperatureShift),
+            tintShift: Float(frame.adjustments.tintShift),
             shadowShift: Float(frame.adjustments.shadowShift),
             highlightShift: Float(frame.adjustments.highlightShift)
         )

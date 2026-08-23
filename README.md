@@ -34,10 +34,11 @@ not touch audio, and has no timeline, no projects and no accounts.
 - **Tone and colour correction** for cameras that have no controls of their own —
   HDMI grabbers like a Cam Link expose none, and macOS offers no manual values
   either. Exposure, black point, white point, midtones and an S-curve contrast,
-  plus white balance, separate shadow and highlight tints, and saturation. Nine
-  sliders that snap back to neutral in the middle, each with a field you can type
-  an exact value into, folded into the render pass that already runs, so they
-  cost nothing measurable.
+  plus white balance on both axes — amber/blue and green/magenta — separate
+  shadow and highlight tints, and saturation. Ten sliders that snap back to
+  neutral in the middle, each with a field you can type an exact value into,
+  folded into the render pass that already runs, so they cost nothing
+  measurable.
 - **Cheap.** Around 17 % of a single core — roughly 1.4 % of an M4 Pro — at
   1080p30 while a conferencing app is actually pulling frames. The capture
   session does not run at all when nobody is looking, and the preview pass is
@@ -132,7 +133,7 @@ Three AVFoundation traps sit between asking for 4K and getting it, all found the
 
 ### Colour correction is free
 
-Exposure, levels, contrast, white balance, split tinting and saturation happen inside the
+Exposure, levels, contrast, white balance, tint, split tinting and saturation happen inside the
 fragment shader that already runs, so they cost no extra pass, no extra buffer and no extra
 CPU work. Measured
 over two 60-second windows at 1080p30 with the preview visible: **7.52 %** and **7.63 %**

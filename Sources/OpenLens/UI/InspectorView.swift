@@ -192,6 +192,13 @@ struct InspectorView: View {
                     scale: .warmth
                 )
                 AdjustmentSlider(
+                    title: "Tint",
+                    value: adjustmentBinding(\.tint),
+                    range: ImageAdjustments.unitRange,
+                    onCommit: { model.commitAdjustments() },
+                    scale: .tint
+                )
+                AdjustmentSlider(
                     title: "Shadow tint",
                     value: adjustmentBinding(\.shadowWarmth),
                     range: ImageAdjustments.unitRange,
@@ -219,9 +226,20 @@ struct InspectorView: View {
                 SectionHeader(
                     "Colour",
                     info: "White balance shifts the whole picture between amber and blue. "
-                        + "Shadow tint and Highlight tint do the same to one end of the "
+                        + "Tint is the second axis, between green and magenta. Shadow tint "
+                        + "and Highlight tint apply the amber/blue shift to one end of the "
                         + "scale only.\n\n"
-                        + "Those two exist because a room rarely has a single colour "
+                        + "Two axes rather than one because a cast on either is invisible "
+                        + "to the other: amber/blue is what changes when a light gets "
+                        + "hotter or colder, green/magenta is what happens when the light "
+                        + "is not a black body at all. LED and fluorescent lamps sit off "
+                        + "that axis, and so does any camera picture profile that reshapes "
+                        + "skin. If white balance alone never quite lands — the picture "
+                        + "goes orange before the colour looks right — the cast is on the "
+                        + "tint axis and no amount of warming will reach it. Skin is where "
+                        + "this shows first: a magenta cast reads as blotchy or flushed "
+                        + "rather than as a colour error.\n\n"
+                        + "Those last two exist because a room rarely has a single colour "
                         + "temperature. A warm lamp on your face and cooler daylight "
                         + "filling the shadows leave a cast that runs in opposite "
                         + "directions at opposite ends of the picture, and no single white "
@@ -384,6 +402,16 @@ struct AdjustmentScale {
         caption: { value in
             guard value != 0 else { return nil }
             return value > 0 ? "warm" : "cool"
+        }
+    )
+
+    static let tint = AdjustmentScale(
+        displayScale: 100,
+        fractionLength: 0,
+        unit: "%",
+        caption: { value in
+            guard value != 0 else { return nil }
+            return value > 0 ? "magenta" : "green"
         }
     )
 }

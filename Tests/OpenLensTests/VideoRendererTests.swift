@@ -461,8 +461,86 @@ final class VideoRendererTests: XCTestCase {
         XCTAssertGreaterThan(Int(cool.b), Int(cool.r))
     }
 
-    func testAdjustmentsAlsoApplyToBGRASources() throws {
-        let neutral = try luma(of: try render(fullFrame(try makeSourceBuffer(), .neutral)))
+    func testTintShiftsBetweenGreenAndMagenta() throws {
+        // Against the light end of the neutral ramp, where there is enough
+        // signal for a white balance to act on.
+        let magenta = try sample(
+            try render(fullFrame(try makeGreyRampSourceBuffer(), ImageAdjustments(tint: 1))),
+            atX: 0.9, y: 0.5
+        )
+        let green = try sample(
+            try render(fullFrame(try makeGreyRampSourceBuffer(), ImageAdjustments(tint: -1))),
+            atX: 0.9, y: 0.5
+        )
+        XCTAssertGreaterThan(Int(magenta.r), Int(magenta.g))
+        XCTAssertGreaterThan(Int(magenta.b), Int(magenta.g))
+        XCTAssertGreaterThan(Int(green.g), Int(green.r))
+        XCTAssertGreaterThan(Int(green.g), Int(green.b))
+    }
+
+    func testTintIsADifferentAxisFromWhiteBalance() throws {
+        // If tint moved green the way temperature does — barely, and only as a
+        // side effect of trading red against blue — it would be a duplicate
+        // control. The point of a second axis is that it reaches a cast the
+        // first one cannot.
+        func greenDeviation(_ adjustments: ImageAdjustments) throws -> Int {
+            let pixel = try sample(
+                try render(fullFrame(try makeGreyRampSourceBuffer(), adjustments)),
+                atX: 0.9, y: 0.5
+            )
+            return Int(pixel.g) - (Int(pixel.r) + Int(pixel.b)) / 2
+        }
+        let byTint = try greenDeviation(ImageAdjustments(tint: -1))
+        let byTemperature = try greenDeviation(ImageAdjustments(temperature: 1))
+        XCTAssertGreaterThan(byTint, abs(byTemperature) * 3)
+    }
+
+    /// The reason the global white balance controls scale with luma.
+    ///
+    /// A flat chroma offset is proportionally enormous on a near-black pixel: it
+    /// drains the blue out of a black shirt and swings a dark neutral
+    /// background green long before the correction reaches a lit face. Scaling
+    /// by luma reproduces what a real white balance does — a per-channel gain in
+    /// linear light, which leaves black alone because black carries no light to
+    /// re-balance.
+    func testGlobalWhiteBalanceLeavesBlackAloneButStillCorrectsHighlights() throws {
+        for adjustments in [ImageAdjustments(temperature: 1),
+                            ImageAdjustments(tint: -1),
+                            ImageAdjustments(temperature: 1, tint: -1)] {
+            let output = try render(fullFrame(try makeGreyRampSourceBuffer(), adjustments))
+            func spread(atX x: CGFloat) throws -> Int {
+                let pixel = try sample(output, atX: x, y: 0.5)
+                let values = [Int(pixel.r), Int(pixel.g), Int(pixel.b)]
+                return values.max()! - values.min()!
+            }
+            // The darkest column of the ramp is very nearly black.
+            XCTAssertLessThan(
+                try spread(atX: 0.01), 8,
+                "a white balance must not tint black — \(adjustments)"
+            )
+            // The light end is what the control is actually for. Measured short
+            // of the very top, where the ramp is already close enough to white
+            // that the warmed channel clips and hides half the shift.
+            XCTAssertGreaterThan(
+                try spread(atX: 0.75), 25,
+                "a white balance must still reach the highlights — \(adjustments)"
+            )
+        }
+    }
+
+    func testSplitToneControlsStillReachTheShadows() throws {
+        // The counterpart to the test above: the shadow tint deliberately stays
+        // a flat offset, because tinting the darkest part of the picture is the
+        // entire point of a split tone. Scaling it by luma would cancel it
+        // against its own weighting curve and silently disable the control.
+        let output = try render(
+            fullFrame(try makeGreyRampSourceBuffer(), ImageAdjustments(shadowWarmth: 1))
+        )
+        let dark = try sample(output, atX: 0.05, y: 0.5)
+        XCTAssertGreaterThan(Int(dark.r), Int(dark.b) + 20)
+    }
+
+    func testAdjustmentsAlsoApplyToBGRASources() throws {        let neutral = try luma(of: try render(fullFrame(try makeSourceBuffer(), .neutral)))
         let brighter = try luma(
             of: try render(fullFrame(try makeSourceBuffer(), ImageAdjustments(exposure: 1)))
         )

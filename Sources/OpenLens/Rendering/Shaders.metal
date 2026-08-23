@@ -12,7 +12,7 @@ struct RenderUniforms {
     // Luma offset/scale for video-range vs full-range YCbCr.
     float  lumaOffset;
     float  lumaScale;
-    // Colour correction. Neutral is 1, 0, 1, 1, 1, 0, 0, 0, 0 — see
+    // Colour correction. Neutral is 1, 0, 1, 1, 1, 0, 0, 0, 0, 0 — see
     // ImageAdjustments.swift, which precomputes these so the shader never
     // recomputes a value that only changes when a slider moves.
     float  exposureGain;
@@ -22,6 +22,7 @@ struct RenderUniforms {
     float  contrastAmount;
     float  saturationGain;
     float  temperatureShift;
+    float  tintShift;
     float  shadowShift;
     float  highlightShift;
 };
@@ -173,12 +174,26 @@ static inline float2 adjust_chroma(float2 chroma, float y, constant RenderUnifor
     // contour along the cheekbone.
     float shadow = saturate(1.0 - y * 2.2);
     float highlight = saturate((y - 0.55) / 0.45);
-    float shift = u.temperatureShift
-                + u.shadowShift * shadow
-                + u.highlightShift * highlight;
+    // The two global white balance controls scale with brightness. A real white
+    // balance is a per-channel gain applied in linear light, so its effect on a
+    // pixel is proportional to how much light that pixel carries: black has no
+    // colour cast to correct and stays black. A flat chroma offset instead hits
+    // a near-black pixel just as hard in absolute terms, which is proportionally
+    // enormous — enough to drain a black shirt of its blue and swing a neutral
+    // dark background green long before the correction reaches a lit face.
+    float balance = u.temperatureShift * y;
+    float tint = u.tintShift * y;
+    // The split-tone controls stay flat, because tinting the darkest part of the
+    // picture is precisely what they are for; scaling those by luma would cancel
+    // the shadow control out against its own weighting curve.
+    float shift = balance + u.shadowShift * shadow + u.highlightShift * highlight;
     // Warm means more red and less blue, which in YCbCr is Cr up and Cb down.
     centred.x -= shift;
     centred.y += shift;
+    // Tint is the other axis: magenta lifts red and blue together and pushes
+    // green down, so both components move the same way.
+    centred.x += tint;
+    centred.y += tint;
     return saturate(centred + 0.5);
 }
 
