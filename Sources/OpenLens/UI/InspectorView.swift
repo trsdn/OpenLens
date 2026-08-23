@@ -17,6 +17,7 @@ struct InspectorView: View {
     @AppStorage("inspector.expanded.zoom") private var zoomExpanded = false
     @AppStorage("inspector.expanded.tone") private var toneExpanded = true
     @AppStorage("inspector.expanded.colour") private var colourExpanded = true
+    @AppStorage("inspector.expanded.lighting") private var lightingExpanded = false
     @AppStorage("inspector.expanded.output") private var outputExpanded = false
     @AppStorage("inspector.expanded.splitTone") private var splitToneExpanded = false
 
@@ -290,6 +291,8 @@ struct InspectorView: View {
                     summaryIsActive: colourChangeCount > 0
                 )
             }
+
+            LightingSection(model: model, isExpanded: $lightingExpanded)
 
             // Preview and Overlay were a section each, which cost two headers
             // for three controls. They belong together: both are about what

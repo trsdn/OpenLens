@@ -73,6 +73,9 @@ targets:
       - path: Sources/OpenLens/Model/CameraScene.swift
       - path: Sources/OpenLens/Model/OverlayGeometry.swift
       - path: Sources/OpenLens/Capture/CaptureEngine.swift
+      # The wire format for the lights: the DTOs have to survive a firmware
+      # that omits fields, and the partial PUT body has to stay partial.
+      - path: Sources/OpenLens/Lighting/KeyLightClient.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.trsdn.openlens.tests

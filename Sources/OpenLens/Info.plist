@@ -24,15 +24,21 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_elg._tcp</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>OpenLens needs your camera so it can zoom, crop, and send the result to your conferencing app.</string>
-	<key>NSSystemExtensionUsageDescription</key>
-	<string>OpenLens installs a camera extension so conferencing apps can select OpenLens as a camera.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>OpenLens looks for Elgato Key Lights on your network so it can set their brightness and colour temperature with the rest of a scene.</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
+	<key>NSSystemExtensionUsageDescription</key>
+	<string>OpenLens installs a camera extension so conferencing apps can select OpenLens as a camera.</string>
 </dict>
 </plist>

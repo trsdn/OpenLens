@@ -35,6 +35,7 @@ final class AppModel: ObservableObject {
     let scenes = SceneStore()
     let installer = SystemExtensionInstaller()
     let extensionClient = ExtensionClient()
+    let lights = LightController()
 
     private let capture = CaptureEngine()
     private var pipeline: FramePipeline?
@@ -113,6 +114,7 @@ final class AppModel: ObservableObject {
         installer.activate()
         extensionClient.connect()
         reloadOverlay()
+        lights.start()
 
         if scenes.scenes.isEmpty, let first = devices.first {
             scenes.addScene(device: first)
@@ -126,6 +128,7 @@ final class AppModel: ObservableObject {
         extensionClient.shutdown()
         hotKeys.unregister()
         healthTimer?.invalidate()
+        lights.stop()
         if let activity {
             ProcessInfo.processInfo.endActivity(activity)
             self.activity = nil
@@ -187,6 +190,9 @@ final class AppModel: ObservableObject {
         }
         capture.start(deviceID: scene.deviceID, quality: scene.quality)
         updateZoomReadout()
+        // Deliberately last and deliberately fire-and-forget: an unreachable
+        // lamp must not delay the picture coming back.
+        lights.apply(scene.lighting)
     }
 
     func selectScene(at index: Int) {
@@ -422,6 +428,22 @@ final class AppModel: ObservableObject {
     func resetAdjustments() {
         setAdjustments(.neutral)
         commitAdjustments()
+    }
+
+    // MARK: - Scene lighting
+
+    var sceneLighting: SceneLighting { scenes.selectedScene?.lighting ?? .off }
+
+    /// Records what the lamps are doing now as part of the scene, so switching
+    /// to it later restores the light along with the crop.
+    func captureLightingIntoScene() {
+        scenes.mutateSelected { $0.lighting = lights.snapshot() }
+        scenes.save()
+    }
+
+    func clearLightingFromScene() {
+        scenes.mutateSelected { $0.lighting = .off }
+        scenes.save()
     }
 
     private func reloadOverlay() {

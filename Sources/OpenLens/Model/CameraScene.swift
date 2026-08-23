@@ -1,6 +1,22 @@
 import CoreGraphics
 import Foundation
 
+/// What a scene wants the lights to do.
+///
+/// Opt-in on purpose. A scene exists to be switched to mid-call, and if every
+/// scene drove the lamps then changing the crop would also change the lighting.
+/// A scene with this turned off leaves the room exactly as it found it.
+struct SceneLighting: Codable, Equatable {
+    var isEnabled: Bool = false
+    /// Keyed by serial number, because that is the only stable name a lamp has.
+    /// Lamps absent from this dictionary are deliberately not touched.
+    var lights: [String: KeyLightState] = [:]
+
+    static let off = SceneLighting()
+
+    var activeCount: Int { lights.count }
+}
+
 /// One saved look: a camera, a crop, and how the overlay sits on top of it.
 struct CameraScene: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
@@ -21,15 +37,26 @@ struct CameraScene: Identifiable, Codable, Equatable {
     /// non-optional here would discard every previously saved scene.
     private var storedAdjustments: ImageAdjustments?
 
+    /// Optional for the same reason as `storedAdjustments`, and additionally
+    /// because nil carries meaning here: a scene that predates lighting must
+    /// read as "does not drive the lights", not as "wants them all off".
+    private var storedLighting: SceneLighting?
+
     var adjustments: ImageAdjustments {
         get { storedAdjustments ?? .neutral }
         set { storedAdjustments = newValue }
+    }
+
+    var lighting: SceneLighting {
+        get { storedLighting ?? .off }
+        set { storedLighting = newValue }
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, deviceID, deviceName, crop, mirrored, quality
         case overlayEnabled, overlayRect, overlayOpacity
         case storedAdjustments = "adjustments"
+        case storedLighting = "lighting"
     }
 
     /// Spelled out because the private stored property above would otherwise
@@ -45,7 +72,8 @@ struct CameraScene: Identifiable, Codable, Equatable {
         overlayEnabled: Bool = false,
         overlayRect: CGRect = CGRect(x: 0.72, y: 0.72, width: 0.24, height: 0.24),
         overlayOpacity: Double = 1.0,
-        adjustments: ImageAdjustments = .neutral
+        adjustments: ImageAdjustments = .neutral,
+        lighting: SceneLighting = .off
     ) {
         self.id = id
         self.name = name
@@ -58,6 +86,7 @@ struct CameraScene: Identifiable, Codable, Equatable {
         self.overlayRect = overlayRect
         self.overlayOpacity = overlayOpacity
         self.storedAdjustments = adjustments
+        self.storedLighting = lighting
     }
 }
 

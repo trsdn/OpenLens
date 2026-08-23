@@ -33,6 +33,37 @@ final class CameraSceneCodingTests: XCTestCase {
         XCTAssertTrue(scene.mirrored)
         // The missing key must read back as neutral rather than throwing.
         XCTAssertEqual(scene.adjustments, .neutral)
+        // And the scene must read as "leaves the lights alone" rather than as
+        // "wants them all off", which would darken the room on first launch.
+        XCTAssertFalse(scene.lighting.isEnabled)
+        XCTAssertTrue(scene.lighting.lights.isEmpty)
+    }
+
+    func testLightingSurvivesASaveAndReload() throws {
+        var scene = CameraScene(name: "Desk", deviceID: "cam", deviceName: "Cam")
+        scene.lighting = SceneLighting(
+            isEnabled: true,
+            lights: ["CW31L1A00160": KeyLightState(isOn: true, brightness: 25, mired: 154)]
+        )
+
+        let data = try JSONEncoder().encode([scene])
+        let restored = try XCTUnwrap(
+            try JSONDecoder().decode([CameraScene].self, from: data).first
+        )
+        XCTAssertEqual(restored.lighting, scene.lighting)
+        XCTAssertEqual(restored.lighting.lights["CW31L1A00160"]?.kelvin, 6494)
+    }
+
+    func testLightingIsStoredUnderItsPublicKey() throws {
+        var scene = CameraScene(name: "Desk", deviceID: "cam", deviceName: "Cam")
+        scene.lighting = SceneLighting(isEnabled: true, lights: [:])
+
+        let data = try JSONEncoder().encode(scene)
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        XCTAssertNotNil(object["lighting"])
+        XCTAssertNil(object["storedLighting"])
     }
 
     func testAdjustmentsSurviveASaveAndReload() throws {
