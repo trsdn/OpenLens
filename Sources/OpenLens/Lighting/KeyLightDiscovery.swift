@@ -118,9 +118,25 @@ final class KeyLightDiscovery {
     /// `NWConnection` is the supported way to do this — there is no public API
     /// that resolves without connecting — so a connection is opened purely to
     /// read `currentPath` and then dropped.
+    ///
+    /// Tried over IPv4 first. The lamps advertise on both, but a home network
+    /// that carries no IPv6 route still answers the Bonjour query, so resolving
+    /// to IPv6 yields an address that looks valid and can never be reached.
     private static func address(of endpoint: NWEndpoint) async -> (host: String, port: Int)? {
+        if let v4 = await address(of: endpoint, version: .v4) { return v4 }
+        return await address(of: endpoint, version: .any)
+    }
+
+    private static func address(
+        of endpoint: NWEndpoint,
+        version: NWProtocolIP.Options.Version
+    ) async -> (host: String, port: Int)? {
         await withCheckedContinuation { continuation in
-            let connection = NWConnection(to: endpoint, using: .tcp)
+            let parameters = NWParameters.tcp
+            if let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
+                ip.version = version
+            }
+            let connection = NWConnection(to: endpoint, using: parameters)
             // Guards against the continuation being resumed twice, which traps:
             // stateUpdateHandler can fire again while we are tearing down.
             let done = OSAllocatedUnfairLock(initialState: false)
@@ -164,8 +180,12 @@ final class KeyLightDiscovery {
         }
     }
 
-    /// Strips the scope id from a link-local IPv6 address (`fe80::1%en0`),
-    /// which `URLComponents` will not accept.
+    /// The address as a string a URL can carry.
+    ///
+    /// The scope id on a link-local IPv6 address (`fe80::1%en0`) is kept. It
+    /// names the interface the address is reachable on, and a link-local
+    /// address without it has no route at all — dropping it produces something
+    /// that parses cleanly and can never connect.
     private nonisolated static func literal(from host: NWEndpoint.Host) -> String {
         switch host {
         case .name(let name, _):
@@ -173,7 +193,7 @@ final class KeyLightDiscovery {
         case .ipv4(let address):
             return "\(address)".components(separatedBy: "%").first ?? "\(address)"
         case .ipv6(let address):
-            return "\(address)".components(separatedBy: "%").first ?? "\(address)"
+            return "\(address)"
         @unknown default:
             return "\(host)"
         }

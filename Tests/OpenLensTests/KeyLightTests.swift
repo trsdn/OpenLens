@@ -134,6 +134,14 @@ final class KeyLightTests: XCTestCase {
         XCTAssertEqual(url.absoluteString, "http://[fd00::1]:9123/elgato/lights")
     }
 
+    /// The scope id on a link-local address names the interface it is
+    /// reachable on. Dropping it leaves an address that parses cleanly and has
+    /// no route at all, which is indistinguishable from an unplugged lamp.
+    func testLinkLocalScopeIsKeptAndEscaped() {
+        let url = KeyLightClient.lightsURL(host: "fe80::1%en0", port: 9123)
+        XCTAssertEqual(url.absoluteString, "http://[fe80::1%25en0]:9123/elgato/lights")
+    }
+
     // MARK: - Devices
 
     func testDeviceIsIdentifiedBySerialNumberRatherThanAddress() {

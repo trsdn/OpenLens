@@ -122,9 +122,11 @@ struct KeyLightClient {
         components.port = port
         components.path = path
         if let url = components.url { return url }
-        // A bare IPv6 literal has to be bracketed, and Bonjour hands back IPv6
-        // on plenty of networks, so falling back on the string form matters.
-        guard let url = URL(string: "http://[\(host)]:\(port)\(path)") else {
+        // A bare IPv6 literal has to be bracketed, and the scope id on a
+        // link-local address has to survive as %25 or the interface is lost
+        // and the address becomes unroutable.
+        let escaped = host.replacingOccurrences(of: "%", with: "%25")
+        guard let url = URL(string: "http://[\(escaped)]:\(port)\(path)") else {
             preconditionFailure("Could not build a URL for \(host):\(port)\(path)")
         }
         return url

@@ -253,7 +253,10 @@ private struct LightRow: View {
                         ),
                         in: 0...LightRow.miredSpan
                     )
-                    Text("\(entry.state.kelvin)K")
+                    // Formatted without grouping: in a German locale the plain
+                    // interpolation renders 6494 as "6.494", which reads as a
+                    // decimal rather than as a temperature.
+                    Text(verbatim: "\(entry.state.kelvin) K")
                         .monospacedDigit()
                         .font(.caption)
                         .foregroundStyle(.secondary)
