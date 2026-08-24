@@ -27,6 +27,11 @@ not touch audio, and has no timeline, no projects and no accounts.
   the selected scene as you change them — there is no save button. Duplicate
   snapshots the current look, and **⌥1…⌥9** switch between scenes system-wide,
   so it works while you are in a call.
+- **Pause without leaving the call.** **⌥P** anywhere, or the button next to the
+  scenes, freezes the picture your call sees on its last frame and hands the
+  physical camera back, so its light goes out. The preview holds that same
+  frame, so you can see what you will resume into. The virtual camera keeps
+  running throughout, so Teams or Zoom never see the device disappear.
 - **PNG overlay with alpha.** Drag it in the picture to move it, pull a corner
   to resize it, double-click to reset the size — or type exact percentages in
   the inspector and snap it to any of nine positions. The aspect ratio comes
@@ -77,12 +82,19 @@ as a percentage of **one** CPU core:
 | --- | --- | --- | --- |
 | Preview visible | 7.7 % | 3.6 % | **11.3 %** |
 | Preview hidden | 6.3 % | 3.6 % | **9.9 %** |
+| Paused | 0.8 % | 1.8 % | **2.6 %** |
+| Nothing streaming | — | **0.0 %** | — |
 
 Hiding the preview (inspector → Preview → Show preview) saves about 1.4 points.
 It is worth switching off once a call is running, but it is not the main cost —
 the virtual camera keeps streaming either way.
 
-Two findings worth recording, because both were counter-intuitive:
+Pausing releases the physical camera whether or not the preview is showing,
+which takes `UVCAssistant` from around 28 % to **0.0 %** — that process is not
+counted in the table above, but it is the single largest consumer while a
+camera is open.
+
+Three findings worth recording, because all three were counter-intuitive:
 
 - The extension used to burn **a third of a core doing nothing**.
   `CMIOExtensionStream.consumeSampleBuffer(from:)` does *not* block on an empty

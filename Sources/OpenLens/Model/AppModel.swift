@@ -19,6 +19,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var sourceSummary = ""
 
     @Published private(set) var previewVisible = true
+    /// Freezes the picture the conferencing app sees, without giving up the
+    /// camera. Deliberately not persisted: starting up paused, and only finding
+    /// out once you are in a call, would be a nasty surprise.
+    @Published private(set) var isPaused = false
     /// User-facing switch, independent of whether the window happens to be
     /// visible. Turning the preview off skips a whole render pass per frame, and
     /// when nothing is streaming either it stops the capture session outright.
@@ -43,6 +47,8 @@ final class AppModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var lastFrameActivity = Date.distantPast
     private var healthTimer: Timer?
+    private var freezeTimer: Timer?
+    private var releasedCaptureWhilePaused = false
     /// Video work is latency sensitive and mostly happens while the window is in
     /// the background, which is exactly when App Nap would otherwise throttle
     /// timers and delay the switch into streaming by several seconds.
@@ -109,6 +115,7 @@ final class AppModel: ObservableObject {
             reason: "Driving the OpenLens virtual camera"
         )
         hotKeys.onSelect = { [weak self] index in self?.selectScene(at: index) }
+        hotKeys.onTogglePause = { [weak self] in self?.togglePause() }
         hotKeys.register()
         refreshDevices()
         installer.activate()
@@ -129,6 +136,7 @@ final class AppModel: ObservableObject {
         hotKeys.unregister()
         healthTimer?.invalidate()
         lights.stop()
+        freezeTimer?.invalidate()
         if let activity {
             ProcessInfo.processInfo.endActivity(activity)
             self.activity = nil
@@ -488,11 +496,72 @@ final class AppModel: ObservableObject {
         let streaming = streamingOverride ?? extensionClient.isStreaming
         pipeline?.update { $0.wantsOutput = streaming }
 
-        if streaming || (previewVisible && previewEnabled) {
+        // Pause means the camera is off. The only reason to keep capturing
+        // while paused is that there is no still frame yet to hold the call
+        // on; with nobody watching, not even that matters.
+        let needsCamera: Bool
+        if isPaused {
+            needsCamera = streaming && pipeline?.hasFrozenFrame != true
+        } else {
+            needsCamera = streaming || (previewVisible && previewEnabled)
+        }
+
+        if needsCamera {
             if let scene = scenes.selectedScene {
+                releasedCaptureWhilePaused = false
                 capture.start(deviceID: scene.deviceID, quality: scene.quality)
             }
         } else {
+            capture.stop()
+        }
+
+        updateFreezeTimer(streaming: streaming)
+    }
+
+    // MARK: - Pause
+
+    /// Freezes the picture the conferencing app sees on the last frame sent and
+    /// hands the physical camera back, which turns its light off. The preview
+    /// keeps showing that same last frame, so you can see what you resume into.
+    func setPaused(_ paused: Bool) {
+        guard paused != isPaused else { return }
+        isPaused = paused
+        pipeline?.setPaused(paused)
+        reconcilePipeline()
+    }
+
+    func togglePause() {
+        setPaused(!isPaused)
+    }
+
+    /// While paused the app must keep feeding the extension, or `FrameRelay`
+    /// times out after half a second and swaps in its "open the app" card —
+    /// which would make a pause look like a crash to whoever is watching.
+    private func updateFreezeTimer(streaming: Bool) {
+        guard isPaused, streaming else {
+            freezeTimer?.invalidate()
+            freezeTimer = nil
+            return
+        }
+        guard freezeTimer == nil else { return }
+        // Common mode, not default: menu tracking and live window resizing stall
+        // the default mode, and a stall longer than half a second would let the
+        // extension swap in its placeholder card mid-pause.
+        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tickPause() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        freezeTimer = timer
+    }
+
+    private func tickPause() {
+        guard let pipeline, isPaused else { return }
+        pipeline.resendFrozenFrame()
+
+        // The still exists now, so the camera can be handed back. Reconciled
+        // once, not on every tick.
+        if pipeline.hasFrozenFrame, !releasedCaptureWhilePaused {
+            releasedCaptureWhilePaused = true
             capture.stop()
         }
     }

@@ -15,6 +15,19 @@ struct SceneStrip: View {
     }
 
     var body: some View {
+        HStack(spacing: 0) {
+            strip
+            Divider()
+            PauseButton(model: model)
+                .padding(.horizontal, 12)
+        }
+        .frame(height: 96)
+        .background(Color(nsColor: .underPageBackgroundColor))
+    }
+
+    /// The pause control sits outside the scroll view: it must never scroll out
+    /// of reach mid-call, which is exactly when it is needed.
+    private var strip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(Array(scenes.scenes.enumerated()), id: \.element.id) { index, scene in
@@ -50,8 +63,38 @@ struct SceneStrip: View {
             }
             .padding(12)
         }
-        .frame(height: 96)
-        .background(Color(nsColor: .underPageBackgroundColor))
+    }
+}
+
+/// Freezes the outgoing picture without giving up the camera.
+///
+/// Leaving the call's camera entirely makes conferencing apps show "camera off"
+/// and sometimes drop the device; a frozen frame keeps the slot warm and resumes
+/// instantly.
+struct PauseButton: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Button {
+            model.togglePause()
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: model.isPaused ? "play.fill" : "pause.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                Text(model.isPaused ? "Resume" : "Pause")
+                    .font(.caption)
+            }
+            .frame(width: 76, height: 62)
+        }
+        .buttonStyle(.bordered)
+        .tint(model.isPaused ? .orange : nil)
+        .keyboardShortcut("p", modifiers: [.command, .shift])
+        .help(
+            model.isPaused
+                ? "Resume sending live video (⌥P works from any app)."
+                : "Freeze the picture your call sees on the current frame and "
+                    + "release the camera, so its light goes out. ⌥P works from any app."
+        )
     }
 }
 

@@ -64,8 +64,17 @@ struct ContentView: View {
             if model.previewEnabled {
                 PreviewView(model: model)
                     .background(.black)
+            } else if model.isPaused {
+                // Both placeholders centre their own stack, so showing them at
+                // once would overlap two blocks of text. "Paused" is the more
+                // urgent of the two and wins.
+                Color.black
             } else {
                 PreviewOffPlaceholder(model: model)
+            }
+
+            if model.isPaused {
+                PausedOverlay(model: model)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -124,6 +133,46 @@ struct PreviewOffPlaceholder: View {
                     .keyboardShortcut("p", modifiers: .command)
             }
         }
+    }
+}
+
+/// Says "paused" over the preview, loudly.
+///
+/// The whole risk of a pause button is forgetting it is on, so this is a
+/// full-bleed tint rather than another discreet pill in the corner.
+struct PausedOverlay: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject private var client: ExtensionClient
+
+    init(model: AppModel) {
+        self.model = model
+        self.client = model.extensionClient
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+            VStack(spacing: 12) {
+                Image(systemName: "pause.circle.fill")
+                    .font(.system(size: 44))
+                Text("Paused")
+                    .font(.title2.weight(.semibold))
+                Text(
+                    client.isStreaming
+                        ? "Your call sees a still picture. The camera is off."
+                        : "Your call will see a still picture. The camera is off."
+                )
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                Button("Resume") { model.setPaused(false) }
+            }
+            .foregroundStyle(.white)
+            .padding(24)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        }
+        .allowsHitTesting(true)
+        .transition(.opacity)
     }
 }
 

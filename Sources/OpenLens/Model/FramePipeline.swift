@@ -15,6 +15,9 @@ struct FrameSettings {
     var sourceAspect: CGFloat = 16.0 / 9.0
     var wantsOutput = false
     var wantsPreview = true
+    /// Freezes the virtual camera on the last frame it sent. The preview keeps
+    /// running, so you can see what you are about to resume into.
+    var paused = false
 }
 
 /// The hot path: one camera frame in, one GPU pass, out to the preview and the
@@ -33,6 +36,10 @@ final class FramePipeline: NSObject, @unchecked Sendable {
     private var overlay: OverlayTexture?
     private var previewTarget: PreviewRenderTarget?
     private var lastFrameTime: CFTimeInterval = 0
+    /// The last frame handed to the extension, kept so that pausing can keep
+    /// re-sending it. Holding a reference also keeps the pixel buffer pool from
+    /// recycling it underneath us.
+    private var frozenOutput: CVPixelBuffer?
 
     /// Set by the owner to learn that frames are flowing, throttled to once a
     /// second so the UI is not woken 30 times per second for a boolean.
@@ -122,9 +129,16 @@ final class FramePipeline: NSObject, @unchecked Sendable {
         let snapshot = settings
         var frameOverlay = overlay
         let preview = previewTarget
+        let hasFrozenFrame = frozenOutput != nil
         os_unfair_lock_unlock(&lock)
 
-        guard snapshot.wantsOutput || snapshot.wantsPreview else { return }
+        // Pausing freezes the outgoing picture. A pause that began before the
+        // first frame has nothing to freeze, so render one anyway: a still of the
+        // camera is a far better thing for a consumer to see than the extension's
+        // "open the app" card.
+        let rendersOutput = snapshot.wantsOutput && (!snapshot.paused || !hasFrozenFrame)
+
+        guard rendersOutput || snapshot.wantsPreview else { return }
 
         if snapshot.overlayEnabled, frameOverlay != nil {
             frameOverlay?.rect = snapshot.overlayRect
@@ -145,7 +159,10 @@ final class FramePipeline: NSObject, @unchecked Sendable {
             adjustments: snapshot.adjustments
         )
 
-        if snapshot.wantsOutput, let output = renderer.renderToOutputBuffer(frame) {
+        if rendersOutput, let output = renderer.renderToOutputBuffer(frame) {
+            os_unfair_lock_lock(&lock)
+            frozenOutput = output
+            os_unfair_lock_unlock(&lock)
             extensionClient.send(
                 pixelBuffer: output,
                 hostTimeNanos: clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
@@ -162,6 +179,44 @@ final class FramePipeline: NSObject, @unchecked Sendable {
             lastActivityReport = now
             onFrameActivity?()
         }
+    }
+
+    // MARK: - Pause
+
+    /// Freezes or resumes the outgoing picture. Resuming drops the frozen frame
+    /// so the pixel buffer goes straight back to the pool.
+    func setPaused(_ paused: Bool) {
+        os_unfair_lock_lock(&lock)
+        settings.paused = paused
+        if !paused { frozenOutput = nil }
+        os_unfair_lock_unlock(&lock)
+    }
+
+    /// Re-sends the frozen frame.
+    ///
+    /// The extension falls back to its placeholder card after half a second
+    /// without a frame from the app, so a pause has to keep talking — otherwise
+    /// "paused" would look to the consumer exactly like "OpenLens quit".
+    func resendFrozenFrame() {
+        os_unfair_lock_lock(&lock)
+        let paused = settings.paused
+        let wantsOutput = settings.wantsOutput
+        let frame = frozenOutput
+        os_unfair_lock_unlock(&lock)
+
+        guard paused, wantsOutput, let frame else { return }
+        extensionClient.send(
+            pixelBuffer: frame,
+            hostTimeNanos: clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        )
+    }
+
+    /// True once there is something to hold the picture on. Used to decide
+    /// whether the capture session may stop while paused.
+    var hasFrozenFrame: Bool {
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
+        return frozenOutput != nil
     }
 
     /// The animation must keep running even when the camera is momentarily

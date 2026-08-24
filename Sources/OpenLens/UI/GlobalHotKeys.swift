@@ -1,7 +1,7 @@
 import Carbon.HIToolbox
 import Foundation
 
-/// System-wide ⌥1…⌥9 for switching scenes.
+/// System-wide ⌥1…⌥9 for switching scenes and ⌥P for pausing.
 ///
 /// The menu-bar shortcuts only fire while OpenLens is frontmost, which is never
 /// the case during a call — the whole point is to re-frame yourself without
@@ -12,6 +12,8 @@ import Foundation
 final class GlobalHotKeys {
     /// Called with a zero-based scene index.
     var onSelect: ((Int) -> Void)?
+    /// Called for ⌥P.
+    var onTogglePause: (() -> Void)?
 
     private var refs: [EventHotKeyRef] = []
     private var handler: EventHandlerRef?
@@ -19,6 +21,9 @@ final class GlobalHotKeys {
 
     /// `kVK_ANSI_1`…`kVK_ANSI_9`, which are not in numeric order.
     private static let keyCodes: [UInt32] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
+    /// `kVK_ANSI_P`, registered under an id past the end of `keyCodes`.
+    private static let pauseKeyCode: UInt32 = 35
+    private static let pauseHotKeyID = UInt32(100)
 
     private static weak var active: GlobalHotKeys?
 
@@ -46,9 +51,16 @@ final class GlobalHotKeys {
                 guard result == noErr, hotKeyID.signature == GlobalHotKeys.signature else {
                     return OSStatus(eventNotHandledErr)
                 }
-                let index = Int(hotKeyID.id)
+                let id = hotKeyID.id
                 DispatchQueue.main.async {
-                    MainActor.assumeIsolated { GlobalHotKeys.active?.onSelect?(index) }
+                    MainActor.assumeIsolated {
+                        guard let active = GlobalHotKeys.active else { return }
+                        if id == GlobalHotKeys.pauseHotKeyID {
+                            active.onTogglePause?()
+                        } else {
+                            active.onSelect?(Int(id))
+                        }
+                    }
                 }
                 return noErr
             },
@@ -72,6 +84,17 @@ final class GlobalHotKeys {
             )
             if registered == noErr, let ref { refs.append(ref) }
         }
+
+        var pauseRef: EventHotKeyRef?
+        let pauseRegistered = RegisterEventHotKey(
+            Self.pauseKeyCode,
+            UInt32(optionKey),
+            EventHotKeyID(signature: Self.signature, id: Self.pauseHotKeyID),
+            GetApplicationEventTarget(),
+            0,
+            &pauseRef
+        )
+        if pauseRegistered == noErr, let pauseRef { refs.append(pauseRef) }
     }
 
     func unregister() {
