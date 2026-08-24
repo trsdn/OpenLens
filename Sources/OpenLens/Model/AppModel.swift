@@ -137,6 +137,10 @@ final class AppModel: ObservableObject {
         healthTimer?.invalidate()
         lights.stop()
         freezeTimer?.invalidate()
+        // A scheduled persist is a `DispatchWorkItem` that will never run once
+        // the app is on its way out, so the last zoom of the session would be
+        // dropped. Firing it here costs one write and closes that window.
+        persistCrop()
         if let activity {
             ProcessInfo.processInfo.endActivity(activity)
             self.activity = nil
@@ -415,6 +419,11 @@ final class AppModel: ObservableObject {
     func setOverlayOpacity(_ opacity: Double) {
         scenes.mutateSelected { $0.overlayOpacity = opacity }
         pipeline?.update { $0.overlayOpacity = opacity }
+        // The slider has no commit callback, so without this the value only ever
+        // reached the disk when some unrelated edit happened to save the array
+        // afterwards — which is why it sometimes survived a restart and
+        // sometimes did not.
+        schedulePersist()
     }
 
     // MARK: - Image adjustments

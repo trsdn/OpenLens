@@ -93,4 +93,52 @@ final class CameraSceneCodingTests: XCTestCase {
         XCTAssertNotNil(object["adjustments"])
         XCTAssertNil(object["storedAdjustments"])
     }
+
+    /// Every field set away from its default, so a value that silently fails to
+    /// round-trip shows up here rather than as a preset that quietly resets.
+    func testEveryFieldSurvivesASaveAndReload() throws {
+        var scene = CameraScene(
+            name: "Desk",
+            deviceID: "cam-link-4k",
+            deviceName: "Cam Link 4K",
+            crop: CropState(center: CGPoint(x: 0.4, y: 0.6), zoom: 1.8),
+            mirrored: true,
+            quality: .matchOutput,
+            overlayEnabled: true,
+            overlayRect: CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.4),
+            overlayOpacity: 0.59,
+            adjustments: ImageAdjustments(exposure: 0.5, contrast: 0.2),
+            lighting: SceneLighting(isEnabled: true, lights: ["ABC": KeyLightState(isOn: true, brightness: 25, mired: 178)])
+        )
+        scene.id = UUID()
+
+        let data = try JSONEncoder().encode(scene)
+        let decoded = try JSONDecoder().decode(CameraScene.self, from: data)
+
+        XCTAssertEqual(decoded, scene)
+    }
+
+    /// The scene format is written by hand — a `CodingKeys` list, a spelled-out
+    /// initialiser and two private optionals. Adding a property without adding
+    /// it to all three compiles cleanly and drops the value on the floor, so
+    /// this pins the set of keys and fails the moment one appears or vanishes.
+    func testTheStoredKeysAreExactlyTheOnesWeExpect() throws {
+        let scene = CameraScene(name: "Desk", deviceID: "cam", deviceName: "Cam")
+        let data = try JSONEncoder().encode(scene)
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+
+        XCTAssertEqual(
+            Set(object.keys),
+            [
+                "id", "name", "deviceID", "deviceName", "crop", "mirrored",
+                "quality", "overlayEnabled", "overlayRect", "overlayOpacity",
+                "adjustments", "lighting",
+            ],
+            "A scene property was added or removed. Check that it is listed in "
+                + "CodingKeys and in the hand-written initialiser, and that "
+                + "whatever sets it in AppModel also persists it."
+        )
+    }
 }
