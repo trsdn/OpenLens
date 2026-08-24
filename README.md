@@ -256,6 +256,15 @@ xcrun notarytool store-credentials openlens-notary \
 | A static card instead of the picture | The app is not running. The extension keeps the device alive on its own so calls do not break. |
 | Zoom looks soft | You are past the "Stays sharp up to" limit in the inspector, and the badge says `soft`. Raise **Capture quality**. |
 
+## Repository stats
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/stats/repo-card-dark.svg">
+  <img alt="Repository statistics" src=".github/stats/repo-card.svg">
+</picture>
+
+Generated daily by the [shared stats workflow](https://github.com/trsdn/.github/blob/main/docs/repo-stats.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
