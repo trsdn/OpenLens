@@ -1,6 +1,15 @@
 #!/bin/bash
 # Builds, notarizes and staples a distributable OpenLens DMG.
 #
+# SUPERSEDED — see AGENTS.md. Releases now go through the notarization broker at
+# github.com/trsdn/macos-notarization-broker, which builds, signs and notarizes
+# in isolated GitHub Actions jobs so that Apple credentials never reach a
+# developer machine. There is deliberately no notarytool profile here, which is
+# why the check below always fails.
+#
+# Kept for reference because it documents the signing constraints that the
+# broker profile has to reproduce.
+#
 # Gatekeeper refuses to activate a camera system extension that is not notarized,
 # so unlike most Mac apps there is no "just ship the zip" shortcut here.
 #
