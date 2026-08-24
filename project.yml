@@ -60,6 +60,10 @@ targets:
         SKIP_INSTALL: YES
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks"
 
+  # This target compiles the sources under test directly instead of linking the
+  # app, so there is no OpenLens module to import. A stray `@testable import
+  # OpenLens` in any test file fails dependency resolution before a single test
+  # runs, which takes down the whole suite and not just that file.
   OpenLensTests:
     type: bundle.unit-test
     platform: macOS
