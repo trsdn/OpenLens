@@ -19,22 +19,34 @@ To cut a release:
 `request.sh` correlates the exact run, downloads only that artifact, and
 verifies `provenance.json` plus the release digests.
 
-### OpenLens must be allowlisted first
+### OpenLens is allowlisted as the `openlens` profile
 
-The broker only signs applications listed in `profiles/apps.json`. As of this
-writing **OpenLens has no profile**, so a release request will be rejected.
-Adding one is a reviewed pull request against the broker and needs:
+The broker only signs applications listed in its `profiles/apps.json`. OpenLens
+was added there in
+[broker#25](https://github.com/trsdn/macos-notarization-broker/pull/25), which
+declares:
 
-- an entry in `profiles/apps.json` naming `trsdn/OpenLens`, the bundle
-  identifier `com.trsdn.openlens`, the executable, architectures and minimum
-  system version;
+- the bundle identifier `com.trsdn.openlens`, the executable, `arm64`, and the
+  minimum system version;
 - a `nested_executables` entry for the camera system extension
-  `Contents/Library/SystemExtensions/com.trsdn.openlens.camera.systemextension`
-  — anything Mach-O that is not declared is rejected by the preflight;
+  `Contents/Library/SystemExtensions/com.trsdn.openlens.camera.systemextension`,
+  pinned as a `plugin_bundle` with package type `SYSX` — anything Mach-O or any
+  nested bundle that is not declared is rejected by the preflight;
 - broker-owned entitlements plists for both the app and the extension;
-- a new build adapter in `scripts/broker.py` (the existing ones are named
-  like `spacemender-xcode`), because the broker never runs scripts from the
-  source repository.
+- the `openlens-xcode` build adapter, because the broker never runs scripts from
+  the source repository.
+
+Any change to the app's identity, layout, architecture, entitlements, or minimum
+macOS version needs a reviewed pull request against the broker **before** the
+next release, or the preflight will reject the build.
+
+Two consequences for this repository:
+
+- `OpenLens.xcodeproj` is committed on purpose. The broker's build job uses only
+  the preinstalled runner toolchain, so it cannot fetch `xcodegen`. Regenerate
+  **and commit** the project after changing `project.yml`.
+- The source repository must stay readable by the broker workflow, which
+  authenticates with its own `github.token`.
 
 `scripts/release.sh` in this repository predates the broker. It still describes
 the local path and is kept only for reference.
