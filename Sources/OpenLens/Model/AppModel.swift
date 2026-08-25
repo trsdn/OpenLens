@@ -49,6 +49,10 @@ final class AppModel: ObservableObject {
     private var healthTimer: Timer?
     private var freezeTimer: Timer?
     private var releasedCaptureWhilePaused = false
+    /// What the scene's lamps were doing when the pause began, so resuming can
+    /// put them back. Deliberately not persisted: an app that quit while paused
+    /// should not reach out and change the lights on the next launch.
+    private var lightsBeforePause: [String: KeyLightState]?
     /// Video work is latency sensitive and mostly happens while the window is in
     /// the background, which is exactly when App Nap would otherwise throttle
     /// timers and delay the switch into streaming by several seconds.
@@ -453,13 +457,40 @@ final class AppModel: ObservableObject {
 
     /// Records what the lamps are doing now as part of the scene, so switching
     /// to it later restores the light along with the crop.
+    ///
+    /// A scene that already names some lamps keeps that choice and only refreshes
+    /// their values; otherwise picking up a newly discovered lamp would silently
+    /// widen what the scene controls.
     func captureLightingIntoScene() {
-        scenes.mutateSelected { $0.lighting = lights.snapshot() }
+        let chosen = Set(sceneLighting.lights.keys)
+        let snapshot = chosen.isEmpty
+            ? lights.snapshot()
+            : SceneLighting(isEnabled: true, lights: lights.currentState(of: chosen))
+        scenes.mutateSelected { $0.lighting = snapshot }
         scenes.save()
     }
 
     func clearLightingFromScene() {
         scenes.mutateSelected { $0.lighting = .off }
+        scenes.save()
+    }
+
+    /// Whether this scene drives that lamp — and so whether pausing darkens it.
+    func isLightInScene(_ serialNumber: String) -> Bool {
+        sceneLighting.includes(serialNumber)
+    }
+
+    /// Adds or removes one lamp from the scene, taking its current state as the
+    /// value to store.
+    func setLightInScene(_ isInScene: Bool, for serialNumber: String) {
+        let lighting: SceneLighting
+        if isInScene {
+            guard let state = lights.currentState(of: [serialNumber])[serialNumber] else { return }
+            lighting = sceneLighting.adding(serialNumber, state: state)
+        } else {
+            lighting = sceneLighting.removing(serialNumber)
+        }
+        scenes.mutateSelected { $0.lighting = lighting }
         scenes.save()
     }
 
@@ -532,15 +563,45 @@ final class AppModel: ObservableObject {
     /// Freezes the picture the conferencing app sees on the last frame sent and
     /// hands the physical camera back, which turns its light off. The preview
     /// keeps showing that same last frame, so you can see what you resume into.
+    ///
+    /// The lamps follow. A pause is someone stepping away, and a key light left
+    /// burning at an empty chair is the thing this button is meant to stop.
     func setPaused(_ paused: Bool) {
         guard paused != isPaused else { return }
         isPaused = paused
         pipeline?.setPaused(paused)
+        if paused {
+            darkenLightsForPause()
+        } else {
+            restoreLightsAfterPause()
+        }
         reconcilePipeline()
     }
 
     func togglePause() {
         setPaused(!isPaused)
+    }
+
+    // MARK: - Pause lighting
+
+    /// Switches off the lamps this scene owns, remembering what each was doing.
+    ///
+    /// The remembered state is read from the hardware rather than from the
+    /// scene, so a brightness nudged by hand and never saved still comes back.
+    private func darkenLightsForPause() {
+        let owned = sceneLighting
+        guard owned.isEnabled, !owned.lights.isEmpty else { return }
+        lightsBeforePause = lights.currentState(of: Set(owned.lights.keys))
+        for serialNumber in owned.lights.keys {
+            lights.setOn(false, for: serialNumber)
+        }
+    }
+
+    /// Puts the lamps back exactly as the pause found them.
+    private func restoreLightsAfterPause() {
+        guard let remembered = lightsBeforePause else { return }
+        lightsBeforePause = nil
+        lights.apply(SceneLighting(isEnabled: true, lights: remembered))
     }
 
     /// While paused the app must keep feeding the extension, or `FrameRelay`

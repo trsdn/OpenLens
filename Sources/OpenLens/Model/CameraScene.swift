@@ -15,6 +15,35 @@ struct SceneLighting: Codable, Equatable {
     static let off = SceneLighting()
 
     var activeCount: Int { lights.count }
+
+    func includes(_ serialNumber: String) -> Bool {
+        lights[serialNumber] != nil
+    }
+
+    /// Adds one lamp at the given state.
+    func adding(_ serialNumber: String, state: KeyLightState) -> SceneLighting {
+        var copy = self
+        copy.lights[serialNumber] = state
+        return copy.withFlagFollowingContents()
+    }
+
+    /// Removes one lamp, leaving it untouched from now on.
+    func removing(_ serialNumber: String) -> SceneLighting {
+        var copy = self
+        copy.lights.removeValue(forKey: serialNumber)
+        return copy.withFlagFollowingContents()
+    }
+
+    /// Keeps `isEnabled` honest.
+    ///
+    /// An enabled scene naming no lamps would claim to drive the lights while
+    /// doing nothing, which shows up as a scene that says "1 light" after the
+    /// last one is removed, and as a pause that darkens nothing.
+    private func withFlagFollowingContents() -> SceneLighting {
+        var copy = self
+        copy.isEnabled = !copy.lights.isEmpty
+        return copy
+    }
 }
 
 /// One saved look: a camera, a crop, and how the overlay sits on top of it.

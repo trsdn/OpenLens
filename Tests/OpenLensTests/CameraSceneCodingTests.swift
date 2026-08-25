@@ -142,3 +142,85 @@ final class CameraSceneCodingTests: XCTestCase {
         )
     }
 }
+
+/// Which lamps a scene owns, and what that implies for the pause button.
+///
+/// The membership list is what the pause button reads to decide which lights to
+/// switch off, so "is this lamp in the scene" and "does this scene drive lights
+/// at all" have to stay in agreement.
+final class SceneLightingMembershipTests: XCTestCase {
+    private let warm = KeyLightState(isOn: true, brightness: 40, mired: 250)
+    private let cool = KeyLightState(isOn: true, brightness: 80, mired: 160)
+
+    func testAScenePlainlyStartsOutLeavingTheLightsAlone() {
+        XCTAssertFalse(SceneLighting.off.isEnabled)
+        XCTAssertFalse(SceneLighting.off.includes("AB1"))
+        XCTAssertEqual(SceneLighting.off.activeCount, 0)
+    }
+
+    func testAddingALightAlsoTurnsTheSceneIntoOneThatDrivesLights() {
+        let lighting = SceneLighting.off.adding("AB1", state: warm)
+
+        XCTAssertTrue(lighting.isEnabled)
+        XCTAssertTrue(lighting.includes("AB1"))
+        XCTAssertEqual(lighting.lights["AB1"], warm)
+    }
+
+    func testLightsNotAddedAreNotIncluded() {
+        let lighting = SceneLighting.off.adding("AB1", state: warm)
+
+        XCTAssertFalse(lighting.includes("AB2"))
+        XCTAssertEqual(lighting.activeCount, 1)
+    }
+
+    func testRemovingTheLastLightStopsTheSceneDrivingLightsAtAll() {
+        let lighting = SceneLighting.off
+            .adding("AB1", state: warm)
+            .removing("AB1")
+
+        // Otherwise the scene claims "1 light" forever and a pause darkens
+        // nothing while insisting it should.
+        XCTAssertFalse(lighting.isEnabled)
+        XCTAssertEqual(lighting.activeCount, 0)
+    }
+
+    func testRemovingOneOfTwoLeavesTheOtherDriven() {
+        let lighting = SceneLighting.off
+            .adding("AB1", state: warm)
+            .adding("AB2", state: cool)
+            .removing("AB1")
+
+        XCTAssertTrue(lighting.isEnabled)
+        XCTAssertFalse(lighting.includes("AB1"))
+        XCTAssertTrue(lighting.includes("AB2"))
+        XCTAssertEqual(lighting.lights["AB2"], cool)
+    }
+
+    func testAddingTheSameLightTwiceUpdatesItRatherThanDuplicating() {
+        let lighting = SceneLighting.off
+            .adding("AB1", state: warm)
+            .adding("AB1", state: cool)
+
+        XCTAssertEqual(lighting.activeCount, 1)
+        XCTAssertEqual(lighting.lights["AB1"], cool)
+    }
+
+    func testRemovingALightThatWasNeverThereChangesNothing() {
+        let lighting = SceneLighting.off.adding("AB1", state: warm)
+
+        XCTAssertEqual(lighting.removing("AB2"), lighting)
+    }
+
+    func testMembershipSurvivesASaveAndReload() throws {
+        let lighting = SceneLighting.off
+            .adding("AB1", state: warm)
+            .adding("AB2", state: cool)
+
+        let data = try JSONEncoder().encode(lighting)
+        let reloaded = try JSONDecoder().decode(SceneLighting.self, from: data)
+
+        XCTAssertEqual(reloaded, lighting)
+        XCTAssertTrue(reloaded.includes("AB1"))
+        XCTAssertTrue(reloaded.includes("AB2"))
+    }
+}

@@ -91,9 +91,11 @@ struct PauseButton: View {
         .keyboardShortcut("p", modifiers: [.command, .shift])
         .help(
             model.isPaused
-                ? "Resume sending live video (⌥P works from any app)."
-                : "Freeze the picture your call sees on the current frame and "
-                    + "release the camera, so its light goes out. ⌥P works from any app."
+                ? "Resume sending live video and put the scene's lights back "
+                    + "(⌥P works from any app)."
+                : "Freeze the picture your call sees on the current frame, release "
+                    + "the camera so its light goes out, and switch off the lights "
+                    + "this scene owns. ⌥P works from any app."
         )
     }
 }

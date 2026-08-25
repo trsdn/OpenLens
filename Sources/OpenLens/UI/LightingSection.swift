@@ -27,7 +27,7 @@ struct LightingSection: View {
                 emptyState
             } else {
                 ForEach(controller.lights) { entry in
-                    LightRow(entry: entry, controller: controller)
+                    LightRow(entry: entry, controller: controller, model: model)
                 }
                 groupControls
                 sceneControls
@@ -53,7 +53,11 @@ struct LightingSection: View {
                     + "address in by hand.\n\n"
                     + "Remember in scene stores what the lights are doing now as part of "
                     + "the selected scene, so switching to it later restores the light "
-                    + "along with the crop. Scenes without this leave the lights alone.",
+                    + "along with the crop. Scenes without this leave the lights alone.\n\n"
+                    + "The mask icon beside each light decides whether that light belongs "
+                    + "to the scene. Lights that belong follow scene changes and go out "
+                    + "when you pause; lights that do not are never touched, which is what "
+                    + "you want for a lamp that lights the room rather than your face.",
                 summary: summary,
                 summaryIsActive: summaryIsActive
             )
@@ -121,7 +125,9 @@ struct LightingSection: View {
             Text(
                 model.sceneLighting.isEnabled
                     ? "This scene sets \(model.sceneLighting.activeCount) "
-                        + "light\(model.sceneLighting.activeCount == 1 ? "" : "s") when selected."
+                        + "light\(model.sceneLighting.activeCount == 1 ? "" : "s") when "
+                        + "selected, and pausing switches "
+                        + "\(model.sceneLighting.activeCount == 1 ? "it" : "them") off."
                     : "This scene leaves the lights alone."
             )
             .font(.caption)
@@ -180,6 +186,7 @@ struct LightingSection: View {
 private struct LightRow: View {
     let entry: KeyLightEntry
     @ObservedObject var controller: LightController
+    @ObservedObject var model: AppModel
 
     static let brightnessBounds =
         Double(KeyLightState.brightnessRange.lowerBound)...Double(KeyLightState.brightnessRange.upperBound)
@@ -203,6 +210,8 @@ private struct LightRow: View {
                 .disabled(entry.isReachable == false)
 
                 Spacer(minLength: 0)
+
+                SceneMembershipButton(entry: entry, model: model)
 
                 if entry.isReachable == false {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -265,5 +274,35 @@ private struct LightRow: View {
             }
         }
         .opacity(entry.isReachable == false ? 0.5 : 1)
+    }
+}
+
+/// Marks whether the selected scene owns this lamp.
+///
+/// Sits in the row rather than behind the row's menu because it decides what
+/// the pause button does, and a control with that much reach should not be
+/// something you have to go looking for.
+private struct SceneMembershipButton: View {
+    let entry: KeyLightEntry
+    @ObservedObject var model: AppModel
+
+    private var isInScene: Bool { model.isLightInScene(entry.id) }
+
+    var body: some View {
+        Button {
+            model.setLightInScene(!isInScene, for: entry.id)
+        } label: {
+            Image(systemName: isInScene ? "theatermasks.fill" : "theatermasks")
+                .foregroundStyle(isInScene ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+        }
+        .buttonStyle(.borderless)
+        .disabled(entry.isReachable == false)
+        .help(
+            isInScene
+                ? "This scene sets this light, and pausing switches it off. "
+                    + "Click to leave it out."
+                : "This scene leaves this light alone. Click to make it part of "
+                    + "the scene, so it follows scene changes and the pause button."
+        )
     }
 }

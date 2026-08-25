@@ -263,6 +263,20 @@ final class LightController: ObservableObject {
         )
     }
 
+    /// What the named lamps are doing right now.
+    ///
+    /// Unreachable lamps are skipped rather than reported at their last known
+    /// state: restoring a guess onto a lamp that was off the network for the
+    /// whole pause would be inventing an instruction the user never gave.
+    func currentState(of serialNumbers: Set<String>) -> [String: KeyLightState] {
+        var result: [String: KeyLightState] = [:]
+        for entry in lights where serialNumbers.contains(entry.device.serialNumber) {
+            guard entry.isReachable != false else { continue }
+            result[entry.device.serialNumber] = entry.state
+        }
+        return result
+    }
+
     /// Puts the lamps where a scene wants them.
     ///
     /// Lights the scene says nothing about are left alone rather than pushed to
