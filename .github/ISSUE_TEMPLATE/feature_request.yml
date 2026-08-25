@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest something OpenLens should do
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        OpenLens frames a live camera for video calls. Recording, audio, a
+        timeline, projects and accounts are deliberately out of scope.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The situation, rather than the feature. It often has a simpler answer.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: Existing settings, other tools, or why the camera itself cannot do it.

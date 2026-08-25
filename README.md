@@ -1,6 +1,7 @@
 # OpenLens
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/trsdn/OpenLens?label=release)](https://github.com/trsdn/OpenLens/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)](https://github.com/trsdn/OpenLens)
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)](https://swift.org)
 [![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%2B-333?logo=apple)](https://github.com/trsdn/OpenLens)
@@ -11,6 +12,24 @@ Teams or Meet.
 
 It does one job — framing a live camera — and deliberately does not record, does
 not touch audio, and has no timeline, no projects and no accounts.
+
+---
+
+## Contents
+
+- [What it does](#what-it-does)
+- [Requirements](#requirements)
+- [Install](#install)
+- [How it works](#how-it-works)
+- [Performance](#performance)
+- [Build from source](#build-from-source)
+- [Releasing](#releasing)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [Repository stats](#repository-stats)
+- [License](#license)
+
+---
 
 ## What it does
 
@@ -29,9 +48,16 @@ not touch audio, and has no timeline, no projects and no accounts.
   so it works while you are in a call.
 - **Pause without leaving the call.** **⌥P** anywhere, or the button next to the
   scenes, freezes the picture your call sees on its last frame and hands the
-  physical camera back, so its light goes out. The preview holds that same
-  frame, so you can see what you will resume into. The virtual camera keeps
-  running throughout, so Teams or Zoom never see the device disappear.
+  physical camera back, so its light goes out. The key lights the scene owns go
+  out with it, so stepping away does not leave a lit, empty chair. The preview
+  holds that same frame, so you can see what you will resume into. The virtual
+  camera keeps running throughout, so Teams or Zoom never see the device
+  disappear.
+- **Elgato Key Light control.** Lights are found on the network over Bonjour and
+  driven from the app — on/off, brightness and colour temperature — so you do
+  not reach for a phone mid-call. Each light can be marked as part of a scene:
+  those follow scene changes and go dark when you pause, while a lamp lighting
+  the rest of the room is left alone.
 - **PNG overlay with alpha.** Drag it in the picture to move it, pull a corner
   to resize it, double-click to reset the size — or type exact percentages in
   the inspector and snap it to any of nine positions. The aspect ratio comes
@@ -50,6 +76,36 @@ not touch audio, and has no timeline, no projects and no accounts.
   skipped when the window is hidden or the preview is switched off (**⌘P**),
   though on Apple silicon that pass is nearly free, so expect a fraction of a
   percent rather than a dramatic saving.
+
+## Requirements
+
+| | |
+|---|---|
+| **macOS** | 14.0 or later (Sonoma+) |
+| **Architecture** | Apple Silicon (arm64) |
+| **Install location** | `/Applications` — macOS will not activate a camera extension from anywhere else |
+| **Lighting (optional)** | Elgato Key Light, Key Light Air or Key Light Mini on the same network |
+| **Build tools** | Xcode 16 command-line tools, and [XcodeGen](https://github.com/yonaskolb/XcodeGen) if you change `project.yml` |
+
+## Install
+
+Download the latest DMG from
+**[Releases](https://github.com/trsdn/OpenLens/releases/latest)**.
+
+1. Open the DMG and drag OpenLens to **Applications**.
+2. Launch it and approve the camera extension in
+   **System Settings › General › Login Items & Extensions**.
+3. In your conferencing app, choose **OpenLens** as the camera. Conferencing
+   apps enumerate cameras at launch, so quit and reopen Zoom, Teams or Meet
+   after installing.
+
+Every release is signed with Developer ID, notarized by Apple and stapled, so it
+runs without a Gatekeeper prompt. To check a download yourself:
+
+```bash
+spctl -a -vvv -t open --context context:primary-signature OpenLens-*.dmg
+shasum -a 256 -c OpenLens-*.dmg.sha256
+```
 
 ## How it works
 
@@ -172,17 +228,6 @@ it exposes no exposure or white-balance controls, and macOS `AVCaptureDevice` of
 manual values on macOS either. The render pass is the only place left, and it happens to
 be the cheapest one.
 
-## Install
-
-Requires macOS 14 or newer on Apple Silicon.
-
-1. Download the DMG from [Releases](https://github.com/trsdn/OpenLens/releases)
-   and drag OpenLens to **Applications** — macOS will not activate a camera
-   extension from anywhere else.
-2. Launch it and approve the camera extension in
-   **System Settings › General › Login Items & Extensions**.
-3. In your conferencing app, choose **OpenLens** as the camera.
-
 ## Build from source
 
 ```bash
@@ -237,13 +282,40 @@ xcodebuild test -project OpenLens.xcodeproj -scheme OpenLens \
   -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
 ```
 
-Release build (notarized, stapled DMG):
+Release build (notarized, stapled DMG): see [Releasing](#releasing) below — it
+does not happen on this machine.
+
+## Releasing
+
+Releases are built, signed, notarized and stapled by
+**[trsdn/macos-notarization-broker](https://github.com/trsdn/macos-notarization-broker)**,
+a manual GitHub Actions workflow. Apple credentials live only in that
+repository's signing environment; nothing here holds them, and no step of a
+release runs locally.
 
 ```bash
-xcrun notarytool store-credentials openlens-notary \
-  --apple-id <apple-id> --team-id <team-id> --password <app-specific-password>
-./scripts/release.sh
+git tag -a vX.Y.Z -m "OpenLens vX.Y.Z" && git push origin vX.Y.Z
+# then, from a checkout of the broker:
+scripts/request.sh openlens vX.Y.Z
 ```
+
+The broker resolves the tag to a commit, builds it in a job that holds no
+secrets, validates the bundle in a second secretless job, and only then signs
+what that validation described. The signing job waits for a human approval. The
+run publishes `provenance.json` and `preflight-manifest.json` alongside the DMG,
+and both are attached to the GitHub release.
+
+Two consequences for this repository:
+
+- `OpenLens.xcodeproj` is committed, because the broker's build job uses only
+  the preinstalled runner toolchain and cannot fetch XcodeGen. Regenerate **and
+  commit** it after changing `project.yml`.
+- Changing the bundle identifier, the layout, the architecture, the entitlements
+  or the minimum macOS version needs a reviewed change to the broker profile
+  first, or the preflight rejects the build.
+
+`scripts/release.sh` predates the broker and is kept only for reference. See
+[AGENTS.md](AGENTS.md).
 
 ## Troubleshooting
 
@@ -255,6 +327,12 @@ xcrun notarytool store-credentials openlens-notary \
 | "Camera is in use" | Some UVC devices (Cam Link 4K among them) refuse concurrent access. Quit OBS or any other app holding the camera. |
 | A static card instead of the picture | The app is not running. The extension keeps the device alive on its own so calls do not break. |
 | Zoom looks soft | You are past the "Stays sharp up to" limit in the inspector, and the badge says `soft`. Raise **Capture quality**. |
+
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md)
+for how to build, test and structure a change, and
+[SECURITY.md](SECURITY.md) for reporting a vulnerability privately.
 
 ## Repository stats
 

@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Unsigned, so this needs no secrets and no certificate. Signing and
+      # notarization happen in trsdn/macos-notarization-broker, never here.
+      - name: Build and test
+        run: |
+          xcodebuild test \
+            -project OpenLens.xcodeproj \
+            -scheme OpenLens \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO
+
+  project-file:
+    name: Xcode project is up to date
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # The broker builds from the committed project file, so a project.yml
+      # change that was never regenerated would ship stale build settings.
+      - name: Regenerate and diff
+        run: |
+          xcodegen generate
+          if ! git diff --exit-code -- OpenLens.xcodeproj; then
+            echo "::error::OpenLens.xcodeproj is out of date with project.yml. Run 'xcodegen generate' and commit the result."
+            exit 1
+          fi
