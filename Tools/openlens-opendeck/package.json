@@ -1,0 +1,12 @@
+{
+  "name": "openlens-opendeck",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An OpenDeck plugin for OpenLens, so a Stream Deck can switch scenes, pause the camera and drive key lights.",
+  "type": "module",
+  "scripts": {
+    "test": "node test/smoke.js",
+    "install-plugin": "./install.sh"
+  },
+  "license": "MIT"
+}

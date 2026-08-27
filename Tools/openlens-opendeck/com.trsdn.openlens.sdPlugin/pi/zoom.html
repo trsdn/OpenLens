@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="inspector.css">
+</head>
+<body>
+    <label for="direction">On press</label>
+    <select id="direction">
+        <option value="in">Zoom in</option>
+        <option value="out">Zoom out</option>
+        <option value="reset">Back to the full frame</option>
+    </select>
+    <p class="note">The key always shows the current zoom, whichever it does.</p>
+
+    <script src="inspector.js"></script>
+    <script>
+        const direction = document.getElementById("direction");
+
+        OpenLensPI.ready(({ settings }) => {
+            direction.value = settings.direction ?? "reset";
+            direction.onchange = () => OpenLensPI.save({ direction: direction.value });
+        });
+    </script>
+</body>
+</html>

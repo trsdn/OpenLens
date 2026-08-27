@@ -1,0 +1,71 @@
+{
+  "Name": "OpenLens",
+  "Author": "Torsten Mahr",
+  "Version": "0.1.0",
+  "Icon": "icons/plugin",
+  "Category": "OpenLens",
+  "CategoryIcon": "icons/plugin",
+  "CodePath": "plugin.js",
+  "OS": [{ "Platform": "mac", "MinimumVersion": "13.0" }],
+  "SDKVersion": 2,
+  "Software": { "MinimumVersion": "6.0" },
+  "Description": "Switch OpenLens scenes, pause the camera and control key lights from a Stream Deck. Keys show what OpenLens is actually doing, including changes made with the hotkeys or in the app window.",
+  "Actions": [
+    {
+      "Name": "Select scene",
+      "UUID": "com.trsdn.openlens.scene",
+      "Icon": "icons/scene",
+      "Tooltip": "Switches to a saved scene. The key lights up while that scene is the live one.",
+      "Controllers": ["Keypad"],
+      "PropertyInspectorPath": "pi/scene.html",
+      "DisableAutomaticStates": true,
+      "States": [
+        { "Image": "icons/scene", "Name": "Inactive", "TitleAlignment": "bottom" },
+        { "Image": "icons/scene-on", "Name": "Live", "TitleAlignment": "bottom" }
+      ]
+    },
+    {
+      "Name": "Pause",
+      "UUID": "com.trsdn.openlens.pause",
+      "Icon": "icons/pause",
+      "Tooltip": "Freezes the picture the conferencing app sees. The key lights up while paused.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [
+        { "Image": "icons/pause", "Name": "Live" },
+        { "Image": "icons/pause-on", "Name": "Paused" }
+      ]
+    },
+    {
+      "Name": "Toggle key light",
+      "UUID": "com.trsdn.openlens.light",
+      "Icon": "icons/light",
+      "Tooltip": "Turns an Elgato key light on or off. The key lights up while the light is on.",
+      "Controllers": ["Keypad"],
+      "PropertyInspectorPath": "pi/light.html",
+      "DisableAutomaticStates": true,
+      "States": [
+        { "Image": "icons/light", "Name": "Off", "TitleAlignment": "bottom" },
+        { "Image": "icons/light-on", "Name": "On", "TitleAlignment": "bottom" }
+      ]
+    },
+    {
+      "Name": "Set brightness",
+      "UUID": "com.trsdn.openlens.brightness",
+      "Icon": "icons/brightness",
+      "Tooltip": "Sets a key light to a fixed brightness, or steps it up and down.",
+      "Controllers": ["Keypad"],
+      "PropertyInspectorPath": "pi/brightness.html",
+      "States": [{ "Image": "icons/brightness", "TitleAlignment": "bottom" }]
+    },
+    {
+      "Name": "Zoom",
+      "UUID": "com.trsdn.openlens.zoom",
+      "Icon": "icons/zoom",
+      "Tooltip": "Zooms in, zooms out, or returns to the full frame. The key shows the current zoom.",
+      "Controllers": ["Keypad"],
+      "PropertyInspectorPath": "pi/zoom.html",
+      "States": [{ "Image": "icons/zoom", "TitleAlignment": "bottom" }]
+    }
+  ]
+}

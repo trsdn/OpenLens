@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="inspector.css">
+</head>
+<body>
+    <label for="scene">Scene</label>
+    <select id="scene"></select>
+    <p class="note" id="note"></p>
+
+    <script src="inspector.js"></script>
+    <script>
+        const select = document.getElementById("scene");
+        const note = document.getElementById("note");
+
+        OpenLensPI.ready(({ settings, options }) => {
+            fillSelect(select, options.scenes, settings.sceneId, "Next scene (cycles)");
+            note.textContent = options.running
+                ? "The key shows the scene's name and lights up while it is live."
+                : "OpenLens is not running, so there are no scenes to list yet.";
+            note.className = options.running ? "note" : "note warning";
+            select.onchange = () => OpenLensPI.save({ sceneId: select.value });
+        });
+    </script>
+</body>
+</html>

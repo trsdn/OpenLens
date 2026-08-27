@@ -98,10 +98,11 @@ export async function send(command, params = {}, { socketPath = defaultSocketPat
  *
  * Returns a function that stops watching.
  */
-export function watch(onState, { socketPath = defaultSocketPath(), onError = () => {} } = {}) {
+export function watch(onState, { socketPath = defaultSocketPath(), onError = () => {}, onDisconnect = () => {} } = {}) {
   let socket = null;
   let stopped = false;
   let retry = null;
+  let connected = false;
 
   const connect = () => {
     if (stopped) return;
@@ -109,6 +110,7 @@ export function watch(onState, { socketPath = defaultSocketPath(), onError = () 
     let buffer = "";
 
     socket.on("connect", () => {
+      connected = true;
       socket.write(JSON.stringify({ id: "subscribe", command: "events.subscribe" }) + "\n");
     });
 
@@ -138,6 +140,13 @@ export function watch(onState, { socketPath = defaultSocketPath(), onError = () 
       if (stopped) return;
       socket?.destroy();
       socket = null;
+      // Only once per outage, and only if there was something to lose: a
+      // watcher started before the app is up should not be told it just went
+      // away every second.
+      if (connected) {
+        connected = false;
+        onDisconnect();
+      }
       if (error && error.code !== "ENOENT" && error.code !== "ECONNREFUSED") onError(error);
       // OpenLens quitting is ordinary rather than exceptional — a watcher
       // should still be there when it comes back.
