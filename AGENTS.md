@@ -77,3 +77,27 @@ set so that mistake fails a test instead of a user's presets.
 
 Whatever sets the new property in `AppModel` must also persist it — either
 `scenes.save()` directly, or `schedulePersist()` for anything driven by a slider.
+
+## Scenes that cannot be read are never overwritten
+
+`SceneStore.load` reports a decoding failure as `readability == .unreadable`
+instead of swallowing it, copies the bytes to `scenes.v1.unreadable`, and `save`
+refuses to write for as long as that lasts. `AppModel` correspondingly only
+creates a starter scene when nothing was ever saved.
+
+Together these close a total data-loss path: a scene the app could not decode
+used to leave `scenes` empty, which made `AppModel` create a blank scene and
+save it over the user's entire library on launch. `SceneStorePreservationTests`
+pins all of it — do not relax the guard in `save` to "simplify" it.
+
+Discarding the data stays possible, but only through `startFresh()`, which the
+user triggers from `SceneRecoveryBanner`. Nothing may discard scenes on the
+user's behalf.
+
+## The app is sandboxed, so debug builds write somewhere else
+
+Preferences live in
+`~/Library/Containers/com.trsdn.openlens/Data/Library/Preferences/`. A build made
+with `CODE_SIGNING_ALLOWED=NO` has no sandbox entitlement and uses
+`~/Library/Preferences/` instead, where it looks like an app with no saved
+scenes. Check the container before concluding anything about missing settings.

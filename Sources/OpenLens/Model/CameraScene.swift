@@ -129,14 +129,54 @@ final class SceneStore: ObservableObject {
     @Published var selectedSceneID: UUID?
     @Published private(set) var overlayURL: URL?
 
-    private let defaults = UserDefaults.standard
+    /// Why the scene list is empty, which decides whether it is safe to write.
+    ///
+    /// `empty` and `unreadable` look identical to every caller — no scenes —
+    /// but they must not be treated the same. Overwriting nothing is free;
+    /// overwriting something we merely failed to parse destroys it.
+    enum Readability: Equatable {
+        /// Nothing has ever been saved, so there is nothing to lose.
+        case empty
+        case loaded
+        /// Scenes exist on disk but could not be decoded. The saved bytes are
+        /// kept and writing is refused until the user decides.
+        case unreadable(String)
+    }
+
+    @Published private(set) var readability: Readability = .empty
+
+    private let defaults: UserDefaults
     private let scenesKey = "scenes.v1"
     private let selectionKey = "scenes.selected.v1"
     private let overlayBookmarkKey = "overlay.bookmark.v1"
+    /// Where scenes we could not decode are parked, so a bad release is
+    /// recoverable by hand instead of being a permanent loss.
+    private let quarantineKey = "scenes.v1.unreadable"
+    private let quarantineDateKey = "scenes.v1.unreadable.date"
     private var overlayAccessURL: URL?
 
-    init() {
+    /// Injectable so tests can exercise the load and save rules against a
+    /// throwaway suite instead of the user's real preferences.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         load()
+    }
+
+    var isUnreadable: Bool {
+        if case .unreadable = readability { return true }
+        return false
+    }
+
+    /// The bytes we refused to overwrite, for a recovery UI or a bug report.
+    var quarantinedScenes: Data? { defaults.data(forKey: quarantineKey) }
+
+    /// Accepts the loss deliberately, after the user has been told.
+    ///
+    /// The quarantined copy is left in place: this unblocks saving, it does not
+    /// erase the evidence.
+    func startFresh() {
+        guard isUnreadable else { return }
+        readability = .empty
     }
 
     var selectedScene: CameraScene? {
@@ -237,6 +277,10 @@ final class SceneStore: ObservableObject {
     // MARK: - Persistence
 
     func save() {
+        // The one rule that matters: never write over scenes we could not read.
+        // Without this, a single decoding failure silently replaces the user's
+        // whole library with whatever is in memory (usually one blank scene).
+        guard !isUnreadable else { return }
         guard let data = try? JSONEncoder().encode(scenes) else { return }
         defaults.set(data, forKey: scenesKey)
         if let selectedSceneID {
@@ -245,9 +289,20 @@ final class SceneStore: ObservableObject {
     }
 
     private func load() {
-        if let data = defaults.data(forKey: scenesKey),
-           let decoded = try? JSONDecoder().decode([CameraScene].self, from: data) {
-            scenes = decoded
+        if let data = defaults.data(forKey: scenesKey) {
+            do {
+                scenes = try JSONDecoder().decode([CameraScene].self, from: data)
+                readability = .loaded
+            } catch {
+                // Park the bytes rather than leaving them one save() away from
+                // being clobbered, and refuse to write until the user decides.
+                defaults.set(data, forKey: quarantineKey)
+                defaults.set(Date(), forKey: quarantineDateKey)
+                readability = .unreadable(error.localizedDescription)
+                scenes = []
+            }
+        } else {
+            readability = .empty
         }
         if let raw = defaults.string(forKey: selectionKey), let id = UUID(uuidString: raw) {
             selectedSceneID = scenes.contains { $0.id == id } ? id : scenes.first?.id

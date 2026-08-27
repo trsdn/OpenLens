@@ -127,7 +127,10 @@ final class AppModel: ObservableObject {
         reloadOverlay()
         lights.start()
 
-        if scenes.scenes.isEmpty, let first = devices.first {
+        // Only conjure a starter scene when nothing was ever saved. If the
+        // stored scenes merely failed to decode, creating one here would be the
+        // exact move that overwrites the user's library.
+        if scenes.scenes.isEmpty, !scenes.isUnreadable, let first = devices.first {
             scenes.addScene(device: first)
         }
         applySelectedScene(animated: false)

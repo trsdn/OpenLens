@@ -91,6 +91,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                SceneRecoveryBanner(scenes: model.scenes)
                 ExtensionStatusBanner(model: model)
                 ZoomBadge(model: model)
             }
@@ -106,6 +107,38 @@ struct ContentView: View {
             .padding(.vertical, 8)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
             .foregroundStyle(tint)
+    }
+}
+
+/// Tells the user that saved scenes could not be read, instead of silently
+/// showing an empty app.
+///
+/// While this is on screen the store refuses to write, so the unreadable data
+/// stays recoverable. Starting fresh is therefore a deliberate choice the user
+/// makes here, never something an app launch does on their behalf.
+struct SceneRecoveryBanner: View {
+    @ObservedObject var scenes: SceneStore
+
+    var body: some View {
+        if case let .unreadable(reason) = scenes.readability {
+            HStack(spacing: 8) {
+                Label(
+                    "Your saved scenes could not be read, so OpenLens has not touched them",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.callout)
+                .foregroundStyle(.orange)
+                Button("Start Fresh") { scenes.startFresh() }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .help(
+                "Nothing has been overwritten — saving stays switched off until you "
+                    + "choose. The original data is kept under the \"scenes.v1.unreadable\" "
+                    + "key in OpenLens's preferences. Reason: \(reason)"
+            )
+        }
     }
 }
 

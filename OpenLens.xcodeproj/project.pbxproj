@@ -61,6 +61,7 @@
 		C596EF94B6F985D20B6A3098 /* KeyLight.swift in Sources */ = {isa = PBXBuildFile; fileRef = C577DC1CA7798150D0D76319 /* KeyLight.swift */; };
 		C655714963BA9D823C3EF925 /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9914A91AF9116A295A5793F5 /* Shaders.metal */; };
 		C74A7A7158CD7D0C278886D1 /* CropGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D26E52E7E9C0BB8BC98139A /* CropGeometry.swift */; };
+		D3A492742946CF97DE832596 /* SceneStorePreservationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10E743E372FE7CBE56DBACA6 /* SceneStorePreservationTests.swift */; };
 		D857D815B1C351194FF0E154 /* InfoButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DB339F08F5888CF00650AF5 /* InfoButton.swift */; };
 		D900D4BBBA7C81A5721513C3 /* CropAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3125184F5A723EC6EACCE60B /* CropAnimator.swift */; };
 		DD272CAE7C62453959F1DE4C /* CameraSceneCodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF861483D84BB25FB6B57CD /* CameraSceneCodingTests.swift */; };
@@ -99,6 +100,7 @@
 
 /* Begin PBXFileReference section */
 		05AFF07073004751EDC8BCC0 /* LightingSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightingSection.swift; sourceTree = "<group>"; };
+		10E743E372FE7CBE56DBACA6 /* SceneStorePreservationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneStorePreservationTests.swift; sourceTree = "<group>"; };
 		110C00210DA6EFE355D38047 /* OpenLensTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenLensTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		14A1CC567E0973847891D10F /* StreamingStateChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingStateChannel.swift; sourceTree = "<group>"; };
 		15E7999D02609A191B8DD0DE /* GlobalHotKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotKeys.swift; sourceTree = "<group>"; };
@@ -302,6 +304,7 @@
 				4E0806B525BADCD6CEC6C615 /* KeyLightTests.swift */,
 				3A5C6E7B6414340E75098C55 /* NumberFieldValueTests.swift */,
 				4EA2C8C9D0C465BEC4EE87D5 /* OverlayGeometryTests.swift */,
+				10E743E372FE7CBE56DBACA6 /* SceneStorePreservationTests.swift */,
 				F06EC23245E92E50968C3EFB /* VideoRendererTests.swift */,
 			);
 			path = OpenLensTests;
@@ -442,6 +445,7 @@
 				3F19E13F0AAFD549455F45BA /* OverlayGeometryTests.swift in Sources */,
 				3448C1912E61F79BB3EACBEA /* OverlayTexture.swift in Sources */,
 				8F79F982FD0FB87CBD27D87B /* PreviewRenderTarget.swift in Sources */,
+				D3A492742946CF97DE832596 /* SceneStorePreservationTests.swift in Sources */,
 				2704F400C0686F10F78F1AFA /* Shaders.metal in Sources */,
 				4D14E8A5B96C06EE5F2145B7 /* StreamingStateChannel.swift in Sources */,
 				FBB35CA4E2E99389F40626ED /* VideoRenderer.swift in Sources */,
