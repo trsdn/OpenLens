@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# Links the plugin into OpenDeck.
+# Installs the plugin into OpenDeck.
 #
-# A symlink rather than a copy, which OpenDeck supports and which means the
-# plugin you edit is the plugin that runs — and that it shares the socket
-# client with the MCP server next door instead of carrying a stale copy of it.
+# A copy rather than a symlink: OpenDeck does not follow one out of its plugins
+# directory, so a linked plugin is silently never loaded — no error, no process,
+# nothing in the log. Re-run this after changing the plugin.
 
 set -euo pipefail
 
 plugin="com.trsdn.openlens.sdPlugin"
-source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$plugin"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 plugins_dir="$HOME/Library/Application Support/opendeck/plugins"
 target="$plugins_dir/$plugin"
 
@@ -32,20 +32,13 @@ if [[ ! -d "$plugins_dir" ]]; then
     exit 1
 fi
 
-# Only ever removing our own link, never somebody's real folder.
-if [[ -L "$target" ]]; then
-    rm "$target"
-elif [[ -e "$target" ]]; then
-    echo "Something that is not a symlink is already at:" >&2
-    echo "  $target" >&2
-    echo "Move it aside first." >&2
-    exit 1
-fi
+"$here/sync.sh"
 
-ln -s "$source_dir" "$target"
+rm -rf "$target"
+cp -R "$here/$plugin" "$target"
 
-echo "Linked $plugin into OpenDeck:"
-echo "  $target -> $source_dir"
+echo "Installed $plugin into OpenDeck:"
+echo "  $target"
 echo
-echo "Restart OpenDeck to pick it up. The repository has to stay where it is,"
-echo "because the link points into it."
+echo "Restart OpenDeck to pick it up, and run this again after any change —"
+echo "OpenDeck reads the copy, not the repository."

@@ -5,6 +5,8 @@
   "description": "An OpenDeck plugin for OpenLens, so a Stream Deck can switch scenes, pause the camera and drive key lights.",
   "type": "module",
   "scripts": {
+    "sync": "./sync.sh",
+    "pretest": "./sync.sh",
     "test": "node test/smoke.js",
     "install-plugin": "./install.sh"
   },

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
 
-import { send, watch, NotRunningError } from "../../openlens-mcp/src/client.js";
+import { send, watch, NotRunningError } from "./vendor/client.js";
 
 /**
  * An OpenDeck plugin for OpenLens.

@@ -18,11 +18,16 @@ No dependencies and no build step. OpenDeck runs plugins with the system Node
 ./install.sh
 ```
 
-This symlinks the plugin into `~/Library/Application Support/opendeck/plugins/`,
-which OpenDeck supports. Restart OpenDeck afterwards. The repository has to stay
-where it is, because the link points into it — and because the plugin shares the
-socket client with [`openlens-mcp`](../openlens-mcp) next door rather than
-keeping a copy of it.
+This copies the plugin into `~/Library/Application Support/opendeck/plugins/`.
+Restart OpenDeck afterwards, and re-run it after any change — OpenDeck reads the
+copy, not the repository.
+
+A copy rather than a symlink because OpenDeck does not follow one out of its
+plugins directory, and fails at it silently: no error, no plugin process, and
+nothing in the log to say why. The install also copies the socket client from
+[`openlens-mcp`](../openlens-mcp) into `vendor/`, so the plugin folder is
+self-contained without a second copy of that file living in the repository. That
+copy is untracked; `./sync.sh` refreshes it, and `npm test` does so on its own.
 
 ## Actions
 

@@ -8,3 +8,7 @@
 OpenLens.xcodeproj/xcuserdata/
 xcuserdata/
 /*.xcworkspace
+
+# Copied in by sync.sh so the plugin folder is self-contained; the original
+# lives in Tools/openlens-mcp/src/client.js.
+Tools/openlens-opendeck/com.trsdn.openlens.sdPlugin/vendor/
