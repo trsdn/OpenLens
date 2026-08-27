@@ -47,12 +47,11 @@ not touch audio, and has no timeline, no projects and no accounts.
   snapshots the current look, and **⌥1…⌥9** switch between scenes system-wide,
   so it works while you are in a call.
 - **Pause without leaving the call.** **⌥P** anywhere, or the button next to the
-  scenes, freezes the picture your call sees on its last frame and hands the
-  physical camera back, so its light goes out. The key lights the scene owns go
-  out with it, so stepping away does not leave a lit, empty chair. The preview
-  holds that same frame, so you can see what you will resume into. The virtual
-  camera keeps running throughout, so Teams or Zoom never see the device
-  disappear.
+  scenes, blacks out the picture your call sees and hands the physical camera
+  back, so its light goes out. The key lights the scene owns go out with it, so
+  stepping away does not leave a lit, empty chair. The preview holds the last
+  live frame, so you can see what you will resume into. The virtual camera keeps
+  running throughout, so Teams or Zoom never see the device disappear.
 - **Elgato Key Light control.** Lights are found on the network over Bonjour and
   driven from the app — on/off, brightness and colour temperature — so you do
   not reach for a phone mid-call. Each light can be marked as part of a scene:

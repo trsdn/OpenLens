@@ -192,8 +192,8 @@ struct PausedOverlay: View {
                     .font(.title2.weight(.semibold))
                 Text(
                     client.isStreaming
-                        ? "Your call sees a still picture. The camera is off."
-                        : "Your call will see a still picture. The camera is off."
+                        ? "Your call sees a black picture. The camera is off."
+                        : "Your call will see a black picture. The camera is off."
                 )
                 .font(.caption)
                 .multilineTextAlignment(.center)

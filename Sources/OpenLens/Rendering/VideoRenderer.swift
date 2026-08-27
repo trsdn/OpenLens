@@ -191,6 +191,52 @@ final class VideoRenderer {
         return output
     }
 
+    /// A fully black frame in the virtual camera's output format.
+    ///
+    /// This is what a pause sends. A frozen still of the room reads as live
+    /// video to whoever is watching, which is the one thing someone who steps
+    /// away does not want; black is unambiguous.
+    ///
+    /// Static and self-allocating on purpose: it is called from the main thread
+    /// while the capture queue is inside `renderToOutputBuffer`, so it must not
+    /// touch the renderer's pool or texture cache. One buffer per pause is not
+    /// worth a shared pool anyway.
+    static func makeBlackOutputBuffer() -> CVPixelBuffer? {
+        var output: CVPixelBuffer?
+        let attributes: [CFString: Any] = [
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
+            kCVPixelBufferMetalCompatibilityKey: true
+        ]
+        guard CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            OpenLensOutput.width,
+            OpenLensOutput.height,
+            OpenLensOutput.pixelFormat,
+            attributes as CFDictionary,
+            &output
+        ) == kCVReturnSuccess, let output else { return nil }
+
+        guard CVPixelBufferLockBaseAddress(output, []) == kCVReturnSuccess else { return nil }
+        defer { CVPixelBufferUnlockBaseAddress(output, []) }
+
+        // Video-range NV12 black is luma 16 and neutral chroma 128. Zeroing both
+        // planes instead — the obvious shortcut — produces a green frame.
+        let fills: [(plane: Int, value: Int32)] = [(0, 16), (1, 128)]
+        for fill in fills {
+            guard let base = CVPixelBufferGetBaseAddressOfPlane(output, fill.plane)
+            else { return nil }
+            let bytes = CVPixelBufferGetBytesPerRowOfPlane(output, fill.plane)
+                * CVPixelBufferGetHeightOfPlane(output, fill.plane)
+            memset(base, fill.value, bytes)
+        }
+
+        CVBufferSetAttachment(
+            output, kCVImageBufferYCbCrMatrixKey,
+            kCVImageBufferYCbCrMatrix_ITU_R_601_4, .shouldPropagate
+        )
+        return output
+    }
+
     /// Blocks until everything submitted so far has finished on the GPU.
     ///
     /// Command buffers on a single queue complete in order, so an empty one

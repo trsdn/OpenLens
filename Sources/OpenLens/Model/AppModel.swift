@@ -19,9 +19,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var sourceSummary = ""
 
     @Published private(set) var previewVisible = true
-    /// Freezes the picture the conferencing app sees, without giving up the
-    /// camera. Deliberately not persisted: starting up paused, and only finding
-    /// out once you are in a call, would be a nasty surprise.
+    /// Blanks the picture the conferencing app sees, without giving up the
+    /// camera slot. Deliberately not persisted: starting up paused, and only
+    /// finding out once you are in a call, would be a nasty surprise.
     @Published private(set) var isPaused = false
     /// User-facing switch, independent of whether the window happens to be
     /// visible. Turning the preview off skips a whole render pass per frame, and
@@ -48,7 +48,6 @@ final class AppModel: ObservableObject {
     private var lastFrameActivity = Date.distantPast
     private var healthTimer: Timer?
     private var freezeTimer: Timer?
-    private var releasedCaptureWhilePaused = false
     /// What the scene's lamps were doing when the pause began, so resuming can
     /// put them back. Deliberately not persisted: an app that quit while paused
     /// should not reach out and change the lights on the next launch.
@@ -539,19 +538,13 @@ final class AppModel: ObservableObject {
         let streaming = streamingOverride ?? extensionClient.isStreaming
         pipeline?.update { $0.wantsOutput = streaming }
 
-        // Pause means the camera is off. The only reason to keep capturing
-        // while paused is that there is no still frame yet to hold the call
-        // on; with nobody watching, not even that matters.
-        let needsCamera: Bool
-        if isPaused {
-            needsCamera = streaming && pipeline?.hasFrozenFrame != true
-        } else {
-            needsCamera = streaming || (previewVisible && previewEnabled)
-        }
+        // Pause means the camera is off, full stop: what the call sees is a
+        // black frame the pipeline produces by itself, so there is nothing left
+        // to capture for.
+        let needsCamera = !isPaused && (streaming || (previewVisible && previewEnabled))
 
         if needsCamera {
             if let scene = scenes.selectedScene {
-                releasedCaptureWhilePaused = false
                 capture.start(deviceID: scene.deviceID, quality: scene.quality)
             }
         } else {
@@ -563,9 +556,9 @@ final class AppModel: ObservableObject {
 
     // MARK: - Pause
 
-    /// Freezes the picture the conferencing app sees on the last frame sent and
-    /// hands the physical camera back, which turns its light off. The preview
-    /// keeps showing that same last frame, so you can see what you resume into.
+    /// Blanks the picture the conferencing app sees and hands the physical
+    /// camera back, which turns its light off. The preview keeps showing the
+    /// last live frame, so you can see what you resume into.
     ///
     /// The lamps follow. A pause is someone stepping away, and a key light left
     /// burning at an empty chair is the thing this button is meant to stop.
@@ -629,14 +622,7 @@ final class AppModel: ObservableObject {
 
     private func tickPause() {
         guard let pipeline, isPaused else { return }
-        pipeline.resendFrozenFrame()
-
-        // The still exists now, so the camera can be handed back. Reconciled
-        // once, not on every tick.
-        if pipeline.hasFrozenFrame, !releasedCaptureWhilePaused {
-            releasedCaptureWhilePaused = true
-            capture.stop()
-        }
+        pipeline.resendPausedFrame()
     }
 
     private func noteFrameActivity() {

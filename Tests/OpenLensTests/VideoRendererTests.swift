@@ -253,6 +253,25 @@ final class VideoRendererTests: XCTestCase {
         )
     }
 
+    /// Pause sends this frame, so "black" has to mean black in the format the
+    /// call actually decodes. Zeroing both NV12 planes is the obvious way to
+    /// write it and produces a saturated green frame instead, which nobody would
+    /// notice until it is on someone else's screen.
+    func testThePauseFrameDecodesToBlackRatherThanZeroedPlanes() throws {
+        let black = try XCTUnwrap(VideoRenderer.makeBlackOutputBuffer())
+
+        XCTAssertEqual(CVPixelBufferGetWidth(black), OpenLensOutput.width)
+        XCTAssertEqual(CVPixelBufferGetHeight(black), OpenLensOutput.height)
+        XCTAssertEqual(CVPixelBufferGetPixelFormatType(black), OpenLensOutput.pixelFormat)
+
+        for point in [(0.0, 0.0), (0.5, 0.5), (1.0, 1.0)] as [(CGFloat, CGFloat)] {
+            let pixel = try sample(black, atX: point.0, y: point.1)
+            XCTAssertEqual(pixel.r, 0)
+            XCTAssertEqual(pixel.g, 0)
+            XCTAssertEqual(pixel.b, 0)
+        }
+    }
+
     func testPreviewNeverRendersMorePixelsThanAreTransmitted() {
         // A Retina-backed window would ask for far more than the output; a
         // sharper preview than the transmitted frame both wastes bandwidth and

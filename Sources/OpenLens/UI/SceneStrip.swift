@@ -66,10 +66,10 @@ struct SceneStrip: View {
     }
 }
 
-/// Freezes the outgoing picture without giving up the camera.
+/// Blanks the outgoing picture without giving up the camera slot.
 ///
 /// Leaving the call's camera entirely makes conferencing apps show "camera off"
-/// and sometimes drop the device; a frozen frame keeps the slot warm and resumes
+/// and sometimes drop the device; a black frame keeps the slot warm and resumes
 /// instantly.
 struct PauseButton: View {
     @ObservedObject var model: AppModel
@@ -93,9 +93,9 @@ struct PauseButton: View {
             model.isPaused
                 ? "Resume sending live video and put the scene's lights back "
                     + "(⌥P works from any app)."
-                : "Freeze the picture your call sees on the current frame, release "
-                    + "the camera so its light goes out, and switch off the lights "
-                    + "this scene owns. ⌥P works from any app."
+                : "Black out the picture your call sees, release the camera so "
+                    + "its light goes out, and switch off the lights this scene "
+                    + "owns. ⌥P works from any app."
         )
     }
 }

@@ -15,8 +15,8 @@ struct FrameSettings {
     var sourceAspect: CGFloat = 16.0 / 9.0
     var wantsOutput = false
     var wantsPreview = true
-    /// Freezes the virtual camera on the last frame it sent. The preview keeps
-    /// running, so you can see what you are about to resume into.
+    /// Blanks the virtual camera. The preview keeps running, so you can see what
+    /// you are about to resume into.
     var paused = false
 }
 
@@ -36,10 +36,9 @@ final class FramePipeline: NSObject, @unchecked Sendable {
     private var overlay: OverlayTexture?
     private var previewTarget: PreviewRenderTarget?
     private var lastFrameTime: CFTimeInterval = 0
-    /// The last frame handed to the extension, kept so that pausing can keep
-    /// re-sending it. Holding a reference also keeps the pixel buffer pool from
-    /// recycling it underneath us.
-    private var frozenOutput: CVPixelBuffer?
+    /// The black frame the virtual camera receives while paused. Built once per
+    /// pause and re-sent by the pause timer.
+    private var pausedOutput: CVPixelBuffer?
 
     /// Set by the owner to learn that frames are flowing, throttled to once a
     /// second so the UI is not woken 30 times per second for a boolean.
@@ -129,14 +128,12 @@ final class FramePipeline: NSObject, @unchecked Sendable {
         let snapshot = settings
         var frameOverlay = overlay
         let preview = previewTarget
-        let hasFrozenFrame = frozenOutput != nil
         os_unfair_lock_unlock(&lock)
 
-        // Pausing freezes the outgoing picture. A pause that began before the
-        // first frame has nothing to freeze, so render one anyway: a still of the
-        // camera is a far better thing for a consumer to see than the extension's
-        // "open the app" card.
-        let rendersOutput = snapshot.wantsOutput && (!snapshot.paused || !hasFrozenFrame)
+        // A pause blanks the outgoing picture, so there is nothing to render for
+        // the extension: the black frame is sent by `setPaused` and repeated by
+        // the pause timer.
+        let rendersOutput = snapshot.wantsOutput && !snapshot.paused
 
         guard rendersOutput || snapshot.wantsPreview else { return }
 
@@ -160,13 +157,7 @@ final class FramePipeline: NSObject, @unchecked Sendable {
         )
 
         if rendersOutput, let output = renderer.renderToOutputBuffer(frame) {
-            os_unfair_lock_lock(&lock)
-            frozenOutput = output
-            os_unfair_lock_unlock(&lock)
-            extensionClient.send(
-                pixelBuffer: output,
-                hostTimeNanos: clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
-            )
+            send(output)
         }
 
         if snapshot.wantsPreview, let preview, let drawable = preview.nextDrawableIfIdle() {
@@ -183,40 +174,44 @@ final class FramePipeline: NSObject, @unchecked Sendable {
 
     // MARK: - Pause
 
-    /// Freezes or resumes the outgoing picture. Resuming drops the frozen frame
-    /// so the pixel buffer goes straight back to the pool.
+    /// Blanks or restores the outgoing picture. Resuming drops the black frame.
+    ///
+    /// The frame is sent immediately rather than left to the pause timer: up to
+    /// 200 ms of live camera after the button was pressed is exactly the thing
+    /// the button exists to prevent.
     func setPaused(_ paused: Bool) {
+        let black = paused ? VideoRenderer.makeBlackOutputBuffer() : nil
+
         os_unfair_lock_lock(&lock)
         settings.paused = paused
-        if !paused { frozenOutput = nil }
+        pausedOutput = black
+        let wantsOutput = settings.wantsOutput
         os_unfair_lock_unlock(&lock)
+
+        if paused, wantsOutput, let black { send(black) }
     }
 
-    /// Re-sends the frozen frame.
+    /// Re-sends the black frame.
     ///
     /// The extension falls back to its placeholder card after half a second
     /// without a frame from the app, so a pause has to keep talking — otherwise
     /// "paused" would look to the consumer exactly like "OpenLens quit".
-    func resendFrozenFrame() {
+    func resendPausedFrame() {
         os_unfair_lock_lock(&lock)
         let paused = settings.paused
         let wantsOutput = settings.wantsOutput
-        let frame = frozenOutput
+        let frame = pausedOutput
         os_unfair_lock_unlock(&lock)
 
         guard paused, wantsOutput, let frame else { return }
-        extensionClient.send(
-            pixelBuffer: frame,
-            hostTimeNanos: clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
-        )
+        send(frame)
     }
 
-    /// True once there is something to hold the picture on. Used to decide
-    /// whether the capture session may stop while paused.
-    var hasFrozenFrame: Bool {
-        os_unfair_lock_lock(&lock)
-        defer { os_unfair_lock_unlock(&lock) }
-        return frozenOutput != nil
+    private func send(_ pixelBuffer: CVPixelBuffer) {
+        extensionClient.send(
+            pixelBuffer: pixelBuffer,
+            hostTimeNanos: clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        )
     }
 
     /// The animation must keep running even when the camera is momentarily
