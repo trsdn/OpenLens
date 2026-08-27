@@ -40,6 +40,7 @@ final class AppModel: ObservableObject {
     let installer = SystemExtensionInstaller()
     let extensionClient = ExtensionClient()
     let lights = LightController()
+    let control = ControlServer()
 
     private let capture = CaptureEngine()
     private var pipeline: FramePipeline?
@@ -134,6 +135,41 @@ final class AppModel: ObservableObject {
         }
         applySelectedScene(animated: false)
         reconcilePipeline()
+
+        // Last, so that a client connecting the instant the socket appears
+        // already sees devices, scenes and a running pipeline rather than an
+        // app that is still assembling itself.
+        let handler = ControlCommandHandler(model: self)
+        control.start { handler.handle($0) }
+        // Weakly, because `control` is owned by this object and would otherwise
+        // hold it back through the closure.
+        control.setStateProvider { [weak self] in
+            guard let self else { return .object([:]) }
+            return ControlCommandHandler(model: self).summary()
+        }
+        observeStateForSubscribers()
+    }
+
+    /// Feeds the control socket's event stream.
+    ///
+    /// Everything a subscriber can see is listed here, and nothing else: a
+    /// deck key showing the current scene has to change when the scene does,
+    /// however that happened — a hotkey, a click in the app, or another
+    /// client's command.
+    private func observeStateForSubscribers() {
+        let changes: [AnyPublisher<Void, Never>] = [
+            scenes.$scenes.map { _ in () }.eraseToAnyPublisher(),
+            scenes.$selectedSceneID.map { _ in () }.eraseToAnyPublisher(),
+            $isPaused.map { _ in () }.eraseToAnyPublisher(),
+            $previewEnabled.map { _ in () }.eraseToAnyPublisher(),
+            $effectiveZoom.map { _ in () }.eraseToAnyPublisher(),
+            $isReceivingFrames.map { _ in () }.eraseToAnyPublisher(),
+            extensionClient.$isStreaming.map { _ in () }.eraseToAnyPublisher(),
+            lights.$lights.map { _ in () }.eraseToAnyPublisher(),
+        ]
+        Publishers.MergeMany(changes)
+            .sink { [weak self] in self?.control.stateDidChange() }
+            .store(in: &cancellables)
     }
 
     func shutdown() {
@@ -143,6 +179,7 @@ final class AppModel: ObservableObject {
         healthTimer?.invalidate()
         lights.stop()
         freezeTimer?.invalidate()
+        control.stop()
         // A scheduled persist is a `DispatchWorkItem` that will never run once
         // the app is on its way out, so the last zoom of the session would be
         // dropped. Firing it here costs one write and closes that window.
