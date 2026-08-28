@@ -294,12 +294,12 @@ struct InspectorView: View {
 
             LightingSection(model: model, isExpanded: $lightingExpanded)
 
-            // Preview and Overlay were a section each, which cost two headers
-            // for three controls. They belong together: both are about what
-            // leaves the app rather than how the picture is graded.
+            // The preview switch used to live here too, next to the overlay,
+            // because both were about what leaves the app. It has its own
+            // button in the scene strip now, beside Pause, where the two kinds
+            // of pause can be told apart; a second copy buried behind a header
+            // only invited the question of which one was authoritative.
             Section(isExpanded: $outputExpanded) {
-                Toggle("Show preview", isOn: $model.previewEnabled)
-
                 Toggle("Show overlay", isOn: overlayEnabledBinding)
                     .disabled(scenes.overlayURL == nil)
 
@@ -326,19 +326,15 @@ struct InspectorView: View {
                 }
             } header: {
                 SectionHeader(
-                    "Output",
-                    info: "Turning the preview off skips one render pass per frame and frees "
-                        + "the window. The virtual camera is unaffected. On Apple silicon the "
-                        + "saving is well under a percent, so treat this as a way to clear "
-                        + "the screen rather than a performance fix.\n\n"
-                        + "The overlay is a PNG with transparency composited on top of the "
+                    "Overlay",
+                    info: "The overlay is a PNG with transparency composited on top of the "
                         + "picture in the same GPU pass, so it is free. Use it for a logo or "
                         + "a lower third. Drag it in the picture to move it and pull a corner "
                         + "to resize it; double-click it to reset the size. Dragging anywhere "
                         + "else still pans the crop. The aspect ratio comes from the image "
                         + "and is kept.",
                     summary: outputSummary,
-                    summaryIsActive: !model.previewEnabled || (scenes.selectedScene?.overlayEnabled ?? false)
+                    summaryIsActive: scenes.selectedScene?.overlayEnabled ?? false
                 )
             }
         }
@@ -357,10 +353,7 @@ struct InspectorView: View {
     }
 
     private var outputSummary: String {
-        var parts: [String] = []
-        if !model.previewEnabled { parts.append("preview off") }
-        if scenes.selectedScene?.overlayEnabled == true { parts.append("overlay on") }
-        return parts.isEmpty ? "Default" : parts.joined(separator: ", ")
+        scenes.selectedScene?.overlayEnabled == true ? "Overlay on" : "Off"
     }
 
     private var toneChangeCount: Int {
