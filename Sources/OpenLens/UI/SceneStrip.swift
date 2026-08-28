@@ -18,15 +18,19 @@ struct SceneStrip: View {
         HStack(spacing: 0) {
             strip
             Divider()
-            PauseButton(model: model)
-                .padding(.horizontal, 12)
+            HStack(spacing: 8) {
+                PreviewButton(model: model)
+                PauseButton(model: model)
+            }
+            .padding(.horizontal, 12)
         }
         .frame(height: 96)
         .background(Color(nsColor: .underPageBackgroundColor))
     }
 
-    /// The pause control sits outside the scroll view: it must never scroll out
-    /// of reach mid-call, which is exactly when it is needed.
+    /// The pause and preview controls sit outside the scroll view: they must
+    /// never scroll out of reach mid-call, which is exactly when they are
+    /// needed.
     private var strip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
@@ -96,6 +100,36 @@ struct PauseButton: View {
                 : "Black out the picture your call sees, release the camera so "
                     + "its light goes out, and switch off the lights this scene "
                     + "owns. ⌥P works from any app."
+        )
+    }
+}
+
+/// Switches the on-screen preview off without touching the outgoing picture.
+///
+/// The counterpart to Pause, and the one that is easy to confuse with it: this
+/// changes only what this window draws. The call keeps seeing live video.
+struct PreviewButton: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Button {
+            model.previewEnabled.toggle()
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: model.previewEnabled ? "eye.fill" : "eye.slash.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                Text(model.previewEnabled ? "Preview" : "Preview off")
+                    .font(.caption)
+            }
+            .frame(width: 76, height: 62)
+        }
+        .buttonStyle(.bordered)
+        .tint(model.previewEnabled ? nil : .orange)
+        .help(
+            model.previewEnabled
+                ? "Stop drawing the picture in this window. The virtual camera "
+                    + "keeps sending live video, so the call sees no change (⌘P)."
+                : "Draw the picture in this window again (⌘P)."
         )
     }
 }
