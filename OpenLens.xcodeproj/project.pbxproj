@@ -31,6 +31,7 @@
 		541295B76DD5783AA7F94A9D /* OverlayGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA01A2C5E045B54C038C329 /* OverlayGeometry.swift */; };
 		58EAC6A851FB54DAD47242B2 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A919A39DC2D667B5C994F37C /* main.swift */; };
 		5DB0A08B80B5403F5C467F3D /* OpenLensID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 985119351CBC81A7D1E111FC /* OpenLensID.swift */; };
+		5DFC8268068087A7F998F9C7 /* CameraExtensionInfoPlistTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFCB38E0749C92F7B26DB51 /* CameraExtensionInfoPlistTests.swift */; };
 		5F17F4805EAAB9FDA66288ED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED523290195CF5A090FD290 /* ContentView.swift */; };
 		63660F8242CF780ACA9234D6 /* OpenLensID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 985119351CBC81A7D1E111FC /* OpenLensID.swift */; };
 		6B726FFF5CAF09E198E9301F /* ControlProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2867A497B00835AEF6AC70E8 /* ControlProtocolTests.swift */; };
@@ -130,6 +131,7 @@
 		5D26E52E7E9C0BB8BC98139A /* CropGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropGeometry.swift; sourceTree = "<group>"; };
 		63D9760F758F6766A10E0702 /* ControlServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlServer.swift; sourceTree = "<group>"; };
 		667AA8FD6A72DCB1208DDC49 /* LightController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightController.swift; sourceTree = "<group>"; };
+		6CFCB38E0749C92F7B26DB51 /* CameraExtensionInfoPlistTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraExtensionInfoPlistTests.swift; sourceTree = "<group>"; };
 		6DA01A2C5E045B54C038C329 /* OverlayGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayGeometry.swift; sourceTree = "<group>"; };
 		77F7BA1080DECE92DF49EDEF /* ControlProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlProtocol.swift; sourceTree = "<group>"; };
 		7818105ABC0D7CC2C1C900CA /* ImageAdjustments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAdjustments.swift; sourceTree = "<group>"; };
@@ -319,6 +321,7 @@
 		F9AAE2913B3788B960366BBD /* OpenLensTests */ = {
 			isa = PBXGroup;
 			children = (
+				6CFCB38E0749C92F7B26DB51 /* CameraExtensionInfoPlistTests.swift */,
 				4CF861483D84BB25FB6B57CD /* CameraSceneCodingTests.swift */,
 				2867A497B00835AEF6AC70E8 /* ControlProtocolTests.swift */,
 				80339F3F63C92BAA7E918C05 /* CropGeometryTests.swift */,
@@ -449,6 +452,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5DFC8268068087A7F998F9C7 /* CameraExtensionInfoPlistTests.swift in Sources */,
 				B6C68F7E9900EC5B960B9E5F /* CameraScene.swift in Sources */,
 				DD272CAE7C62453959F1DE4C /* CameraSceneCodingTests.swift in Sources */,
 				20FA125BF615FC7056FC1A0E /* CaptureEngine.swift in Sources */,
@@ -598,7 +602,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.2.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -760,7 +764,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.2.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
