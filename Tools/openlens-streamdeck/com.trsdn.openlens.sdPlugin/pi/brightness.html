@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="inspector.css">
+</head>
+<body>
+    <label for="light">Key light</label>
+    <select id="light"></select>
+
+    <label for="mode">On press</label>
+    <select id="mode">
+        <option value="set">Set a fixed brightness</option>
+        <option value="up">Step up</option>
+        <option value="down">Step down</option>
+    </select>
+
+    <div id="fixed">
+        <label for="brightness">Brightness (%)</label>
+        <input id="brightness" type="number" min="0" max="100" step="1">
+    </div>
+
+    <div id="stepped" hidden>
+        <label for="step">Step size (%)</label>
+        <input id="step" type="number" min="1" max="50" step="1">
+    </div>
+
+    <script src="inspector.js"></script>
+    <script>
+        const light = document.getElementById("light");
+        const mode = document.getElementById("mode");
+        const brightness = document.getElementById("brightness");
+        const step = document.getElementById("step");
+        const fixed = document.getElementById("fixed");
+        const stepped = document.getElementById("stepped");
+
+        // A single signed number on the wire, because that is all the plugin
+        // needs: zero means "set", anything else means "step by this much".
+        const write = () => {
+            const size = Math.abs(Number(step.value) || 10);
+            fixed.hidden = mode.value !== "set";
+            stepped.hidden = mode.value === "set";
+            OpenLensPI.save({
+                serialNumber: light.value,
+                brightness: Number(brightness.value) || 0,
+                step: mode.value === "set" ? 0 : mode.value === "up" ? size : -size,
+            });
+        };
+
+        OpenLensPI.ready(({ settings, options }) => {
+            fillSelect(light, options.lights, settings.serialNumber, "The only one found");
+            const stepValue = Number(settings.step ?? 0);
+            mode.value = stepValue === 0 ? "set" : stepValue > 0 ? "up" : "down";
+            brightness.value = settings.brightness ?? 50;
+            step.value = Math.abs(stepValue) || 10;
+            fixed.hidden = mode.value !== "set";
+            stepped.hidden = mode.value === "set";
+            for (const field of [light, mode, brightness, step]) field.onchange = write;
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="inspector.css">
+</head>
+<body>
+    <label for="light">Key light</label>
+    <select id="light"></select>
+    <p class="note" id="note"></p>
+
+    <script src="inspector.js"></script>
+    <script>
+        const select = document.getElementById("light");
+        const note = document.getElementById("note");
+
+        OpenLensPI.ready(({ settings, options }) => {
+            fillSelect(select, options.lights, settings.serialNumber, "The only one found");
+            note.textContent = options.running
+                ? "The key shows the light's brightness and lights up while it is on."
+                : "OpenLens is not running, so there are no lights to list yet.";
+            note.className = options.running ? "note" : "note warning";
+            select.onchange = () => OpenLensPI.save({ serialNumber: select.value });
+        });
+    </script>
+</body>
+</html>

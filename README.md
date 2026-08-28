@@ -21,6 +21,7 @@ not touch audio, and has no timeline, no projects and no accounts.
 - [Requirements](#requirements)
 - [Install](#install)
 - [How it works](#how-it-works)
+- [Remote control](#remote-control)
 - [Performance](#performance)
 - [Build from source](#build-from-source)
 - [Releasing](#releasing)
@@ -127,6 +128,48 @@ are wrapped as Metal textures, rendered once, and the result is handed to the
 camera extension through a CoreMediaIO **sink stream**. The extension republishes
 it on the virtual camera device, and falls back to a placeholder card whenever the
 app is not running.
+
+## Remote control
+
+OpenLens can be driven from outside its window — by a script, by a Stream Deck,
+or by an AI agent — through a control socket the app opens while it runs:
+
+```
+~/Library/Group Containers/G69Z5BNY97.com.trsdn.openlens/control.sock
+```
+
+The protocol is one JSON object per line. Send a command, get an answer:
+
+```json
+{"id": "1", "command": "scene.select", "params": {"index": 2}}
+{"id": "1", "ok": true, "result": { ... }}
+```
+
+Subscribe with `events.subscribe` and the app pushes the state whenever it
+changes, including changes made with the ⌥1…⌥9 hotkeys or in the app window, so
+a hardware key can show what is actually happening rather than what it last
+set.
+
+Access control is the file's permissions. There is no port, no token, and
+nothing listening on the network — which is also why the app needs no extra
+entitlement to offer this.
+
+[`Tools/openlens-mcp`](Tools/openlens-mcp) puts an **MCP server** in front of the
+socket so an AI assistant can operate the camera, and doubles as a CLI:
+
+```bash
+node Tools/openlens-mcp/src/index.js call scene.next
+node Tools/openlens-mcp/src/index.js watch
+```
+
+It has no dependencies. See its [README](Tools/openlens-mcp/README.md) for the
+MCP client configuration and the full command list.
+
+[`Tools/openlens-streamdeck`](Tools/openlens-streamdeck) is a **deck plugin** for
+OpenDeck and the Elgato Stream Deck, so hardware keys can switch scenes, pause
+the camera and drive key lights. Its keys follow the app rather than only
+driving it: a scene key lights up while its scene is live, even when the scene
+was changed with ⌥3.
 
 ## Performance
 

@@ -33,6 +33,8 @@
 		5DB0A08B80B5403F5C467F3D /* OpenLensID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 985119351CBC81A7D1E111FC /* OpenLensID.swift */; };
 		5F17F4805EAAB9FDA66288ED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED523290195CF5A090FD290 /* ContentView.swift */; };
 		63660F8242CF780ACA9234D6 /* OpenLensID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 985119351CBC81A7D1E111FC /* OpenLensID.swift */; };
+		6B726FFF5CAF09E198E9301F /* ControlProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2867A497B00835AEF6AC70E8 /* ControlProtocolTests.swift */; };
+		6DA5112D818889BB88D7AA90 /* ControlServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63D9760F758F6766A10E0702 /* ControlServer.swift */; };
 		72DC35DEE0E61A48EBE90267 /* CameraScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F1AE9A90B627010B49792D /* CameraScene.swift */; };
 		73571B6ECD55E087752BE4AC /* ImageAdjustmentsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0DD70DDD2FA0C470301D99 /* ImageAdjustmentsTests.swift */; };
 		74E26EAC8273792D7ACC1F45 /* OverlayGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA01A2C5E045B54C038C329 /* OverlayGeometry.swift */; };
@@ -43,6 +45,7 @@
 		809FDC3E9563855CFABC6D34 /* IdleFrameRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9BD26EEBF2199F156C0627 /* IdleFrameRenderer.swift */; };
 		82760871D4D7C7DD70C05C11 /* ImageAdjustments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7818105ABC0D7CC2C1C900CA /* ImageAdjustments.swift */; };
 		827FB9B33D13BFA42D2966AB /* KeyLightTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0806B525BADCD6CEC6C615 /* KeyLightTests.swift */; };
+		85E7238B76BA0F2C67BA6DC9 /* ControlProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77F7BA1080DECE92DF49EDEF /* ControlProtocol.swift */; };
 		864D0726F9AA177345B22B73 /* OpenLensID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 985119351CBC81A7D1E111FC /* OpenLensID.swift */; };
 		896834F52E5E0DE36579AD8A /* KeyLightClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45E7FE28AB2F7B1B01A51D48 /* KeyLightClient.swift */; };
 		8D4A36761C212C893E92A4CC /* SystemExtensionInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49A60DCC4FAEA82D918B27F8 /* SystemExtensionInstaller.swift */; };
@@ -52,6 +55,7 @@
 		9A172686D79B2FCC232BA9E7 /* FramePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB49BD37153B03BC9E619717 /* FramePipeline.swift */; };
 		A3B314A10CFEDB0BD7EA5C89 /* ExtensionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87512EDDAEFF87052D9E8006 /* ExtensionClient.swift */; };
 		AF5D9E0009638860DE71E265 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F2453D3FD8E0A1FC83D5C3 /* AppModel.swift */; };
+		B00070CF3A612D656C7AC561 /* ControlProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77F7BA1080DECE92DF49EDEF /* ControlProtocol.swift */; };
 		B65AB6E832DF189CE3FA1534 /* OpenLensProviderSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5126564CB1A64BC4D9B9C99 /* OpenLensProviderSource.swift */; };
 		B6C68F7E9900EC5B960B9E5F /* CameraScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F1AE9A90B627010B49792D /* CameraScene.swift */; };
 		B6D91AB3517EEA6AFDA5CBF7 /* KeyLight.swift in Sources */ = {isa = PBXBuildFile; fileRef = C577DC1CA7798150D0D76319 /* KeyLight.swift */; };
@@ -68,10 +72,12 @@
 		DF3975B56C55F3F39A55E21D /* CaptureEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F729F773B1999F34579614A3 /* CaptureEngine.swift */; };
 		E167142023CEEF4D724726AE /* VideoRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C082B57EEE36131CEEABE7 /* VideoRenderer.swift */; };
 		E6AD01DBEC2BC120D9063922 /* CropGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D26E52E7E9C0BB8BC98139A /* CropGeometry.swift */; };
+		EEF1C5B1CF5BE23457834D5E /* ControlProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77F7BA1080DECE92DF49EDEF /* ControlProtocol.swift */; };
 		EF1F8A6858E115DAB09F261E /* GlobalHotKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15E7999D02609A191B8DD0DE /* GlobalHotKeys.swift */; };
 		F72C01CF4FC2D7012E0F64B4 /* OverlayTexture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C8AD987FB525C94E02964E0 /* OverlayTexture.swift */; };
 		F84DBAAE3ABBA0B221E7EE05 /* LightingSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05AFF07073004751EDC8BCC0 /* LightingSection.swift */; };
 		FBB35CA4E2E99389F40626ED /* VideoRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C082B57EEE36131CEEABE7 /* VideoRenderer.swift */; };
+		FE5F9704022554781E1C8A6D /* ControlCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5131B11E4F08880775B8DC53 /* ControlCommands.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -107,6 +113,7 @@
 		1C8AD987FB525C94E02964E0 /* OverlayTexture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayTexture.swift; sourceTree = "<group>"; };
 		1D1DACA6389A1261507C19E8 /* KeyLightDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyLightDiscovery.swift; sourceTree = "<group>"; };
 		277A4632D23385CE0498FBD5 /* OpenLens.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenLens.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2867A497B00835AEF6AC70E8 /* ControlProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlProtocolTests.swift; sourceTree = "<group>"; };
 		3125184F5A723EC6EACCE60B /* CropAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropAnimator.swift; sourceTree = "<group>"; };
 		3A5C6E7B6414340E75098C55 /* NumberFieldValueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NumberFieldValueTests.swift; sourceTree = "<group>"; };
 		45E7FE28AB2F7B1B01A51D48 /* KeyLightClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyLightClient.swift; sourceTree = "<group>"; };
@@ -116,12 +123,15 @@
 		4DB339F08F5888CF00650AF5 /* InfoButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InfoButton.swift; sourceTree = "<group>"; };
 		4E0806B525BADCD6CEC6C615 /* KeyLightTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyLightTests.swift; sourceTree = "<group>"; };
 		4EA2C8C9D0C465BEC4EE87D5 /* OverlayGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayGeometryTests.swift; sourceTree = "<group>"; };
+		5131B11E4F08880775B8DC53 /* ControlCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlCommands.swift; sourceTree = "<group>"; };
 		55CE1959F2AF39BECC4F107D /* FrameRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameRelay.swift; sourceTree = "<group>"; };
 		5733E20ABD169ED31005BB11 /* OpenLens.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenLens.entitlements; sourceTree = "<group>"; };
 		5C0DD70DDD2FA0C470301D99 /* ImageAdjustmentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAdjustmentsTests.swift; sourceTree = "<group>"; };
 		5D26E52E7E9C0BB8BC98139A /* CropGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropGeometry.swift; sourceTree = "<group>"; };
+		63D9760F758F6766A10E0702 /* ControlServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlServer.swift; sourceTree = "<group>"; };
 		667AA8FD6A72DCB1208DDC49 /* LightController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightController.swift; sourceTree = "<group>"; };
 		6DA01A2C5E045B54C038C329 /* OverlayGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayGeometry.swift; sourceTree = "<group>"; };
+		77F7BA1080DECE92DF49EDEF /* ControlProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlProtocol.swift; sourceTree = "<group>"; };
 		7818105ABC0D7CC2C1C900CA /* ImageAdjustments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAdjustments.swift; sourceTree = "<group>"; };
 		7B3739C2CD613CD7673966AD /* SceneStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneStrip.swift; sourceTree = "<group>"; };
 		7FE19205BEB26A6E17615832 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -198,6 +208,15 @@
 			);
 			sourceTree = "<group>";
 		};
+		49520BADE9AF8A520BB75BD2 /* Control */ = {
+			isa = PBXGroup;
+			children = (
+				5131B11E4F08880775B8DC53 /* ControlCommands.swift */,
+				63D9760F758F6766A10E0702 /* ControlServer.swift */,
+			);
+			path = Control;
+			sourceTree = "<group>";
+		};
 		4F22B028A760450E92C61184 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
@@ -243,6 +262,7 @@
 				5733E20ABD169ED31005BB11 /* OpenLens.entitlements */,
 				BB466D017E1386001D34D44A /* OpenLensApp.swift */,
 				24D49130BD897EFE376AA477 /* Capture */,
+				49520BADE9AF8A520BB75BD2 /* Control */,
 				1B69F0ACC058F68E91A607A6 /* Extension */,
 				1DF5C7CD2937E9AC298069A6 /* Lighting */,
 				9E6EE323B027CC4C545BF728 /* Model */,
@@ -266,6 +286,7 @@
 		E2BC4BD374FF65BC3E66AC21 /* OpenLensShared */ = {
 			isa = PBXGroup;
 			children = (
+				77F7BA1080DECE92DF49EDEF /* ControlProtocol.swift */,
 				3125184F5A723EC6EACCE60B /* CropAnimator.swift */,
 				5D26E52E7E9C0BB8BC98139A /* CropGeometry.swift */,
 				7818105ABC0D7CC2C1C900CA /* ImageAdjustments.swift */,
@@ -299,6 +320,7 @@
 			isa = PBXGroup;
 			children = (
 				4CF861483D84BB25FB6B57CD /* CameraSceneCodingTests.swift */,
+				2867A497B00835AEF6AC70E8 /* ControlProtocolTests.swift */,
 				80339F3F63C92BAA7E918C05 /* CropGeometryTests.swift */,
 				5C0DD70DDD2FA0C470301D99 /* ImageAdjustmentsTests.swift */,
 				4E0806B525BADCD6CEC6C615 /* KeyLightTests.swift */,
@@ -430,6 +452,8 @@
 				B6C68F7E9900EC5B960B9E5F /* CameraScene.swift in Sources */,
 				DD272CAE7C62453959F1DE4C /* CameraSceneCodingTests.swift in Sources */,
 				20FA125BF615FC7056FC1A0E /* CaptureEngine.swift in Sources */,
+				B00070CF3A612D656C7AC561 /* ControlProtocol.swift in Sources */,
+				6B726FFF5CAF09E198E9301F /* ControlProtocolTests.swift in Sources */,
 				B85254E4793307C06DC8DC8E /* CropAnimator.swift in Sources */,
 				1B019E3355C1361A346445E0 /* CropGeometry.swift in Sources */,
 				42081375764B77215B2BE670 /* CropGeometryTests.swift in Sources */,
@@ -461,6 +485,9 @@
 				72DC35DEE0E61A48EBE90267 /* CameraScene.swift in Sources */,
 				DF3975B56C55F3F39A55E21D /* CaptureEngine.swift in Sources */,
 				5F17F4805EAAB9FDA66288ED /* ContentView.swift in Sources */,
+				FE5F9704022554781E1C8A6D /* ControlCommands.swift in Sources */,
+				85E7238B76BA0F2C67BA6DC9 /* ControlProtocol.swift in Sources */,
+				6DA5112D818889BB88D7AA90 /* ControlServer.swift in Sources */,
 				D900D4BBBA7C81A5721513C3 /* CropAnimator.swift in Sources */,
 				E6AD01DBEC2BC120D9063922 /* CropGeometry.swift in Sources */,
 				A3B314A10CFEDB0BD7EA5C89 /* ExtensionClient.swift in Sources */,
@@ -493,6 +520,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EEF1C5B1CF5BE23457834D5E /* ControlProtocol.swift in Sources */,
 				234E4B8D4D6917E09EF3B2AD /* CropAnimator.swift in Sources */,
 				C74A7A7158CD7D0C278886D1 /* CropGeometry.swift in Sources */,
 				7A09CB5FA7067546A04FA6EC /* FrameRelay.swift in Sources */,
@@ -553,7 +581,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = G69Z5BNY97;
@@ -570,7 +598,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -709,7 +737,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = G69Z5BNY97;
@@ -732,7 +760,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
