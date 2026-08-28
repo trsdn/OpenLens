@@ -46,11 +46,46 @@ and the app dies at launch with `Launch failed` and, in the log,
 `AppleMobileFileIntegrityError -413`. Releases v0.1.0 and v0.1.1 shipped that
 way and cannot be started on any Mac.
 
-The profile lives in the broker's `macos-signing` environment as
-`OPENLENS_PROVISIONING_PROFILE` and must be a **Developer ID** profile from the
-Apple Developer portal. The Xcode "Mac Team Provisioning Profile" that a local
-build embeds is not usable: it names the Macs it was issued for, so it works on
-the machine that built the app and nowhere else. The broker rejects it.
+The profile lives in the broker repository as
+`profiles/provisioning/openlens.provisionprofile`
+([broker#35](https://github.com/trsdn/macos-notarization-broker/pull/35)). It is
+a **Mac Team Direct** profile with `ProvisionsAllDevices = true`, which Xcode
+issues on export with `-allowProvisioningUpdates`; the broker refuses anything
+else. The Xcode "Mac Team Provisioning Profile" that a local build embeds names
+the Macs it was issued for, so it works on the machine that built the app and
+nowhere else. A profile is not a secret — a copy ships inside every downloaded
+app that uses one — so it belongs in the repository rather than in an
+environment secret.
+
+## The broker builds unsigned, so team build settings expand to nothing
+
+The broker builds the source in a job with no Apple credentials and signs
+afterwards. `$(TeamIdentifierPrefix)` is therefore empty in every file the build
+substitutes, while a local Xcode build fills it in and looks fine.
+
+That difference cost a release. `Sources/OpenLensCamera/Info.plist` spelled the
+camera extension's `CMIOExtensionMachServiceName` as
+`$(TeamIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)`, so the broker's build
+named it `com.trsdn.openlens.camera` instead of
+`G69Z5BNY97.com.trsdn.openlens.camera`. A sandboxed system extension whose mach
+service name is not inside one of its app groups is rejected by `sysextd`, which
+uninstalls it seconds after activation:
+
+```
+System extension com.trsdn.openlens.camera has an invalid mach service name or
+is not signed, the value must be prefixed with one of the App Groups in the
+entitlement.
+```
+
+The app shows only `extension category returned error`. Nothing else fails: the
+app launches, signature, notarization and Gatekeeper all pass. Confirm with
+
+```bash
+log show --last 10m --predicate 'process == "sysextd"' --style compact | grep openlens
+```
+
+Prefer literal team identifiers over build settings anywhere the broker's
+unsigned build reads them. `CameraExtensionInfoPlistTests` pins this one.
 
 Any change to the app's identity, layout, architecture, entitlements, or minimum
 macOS version needs a reviewed pull request against the broker **before** the

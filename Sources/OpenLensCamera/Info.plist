@@ -26,8 +26,16 @@
 	<string>OpenLens installs a camera extension so conferencing apps can use your processed video.</string>
 	<key>CMIOExtension</key>
 	<dict>
+		<!-- The team prefix is spelled out rather than taken from
+		     $(TeamIdentifierPrefix), which is only defined when the build signs
+		     with a team. The notarization broker builds the source unsigned and
+		     signs afterwards, so the variable expands to nothing there and the
+		     name loses its prefix. sysextd then refuses the extension with
+		     "invalid mach service name ... must be prefixed with one of the App
+		     Groups in the entitlement" and uninstalls it on the spot, which
+		     looks like "extension category returned error" in the app. -->
 		<key>CMIOExtensionMachServiceName</key>
-		<string>$(TeamIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+		<string>G69Z5BNY97.$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	</dict>
 </dict>
 </plist>
