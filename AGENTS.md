@@ -36,6 +36,22 @@ declares:
 - the `openlens-xcode` build adapter, because the broker never runs scripts from
   the source repository.
 
+Since
+[broker#29](https://github.com/trsdn/macos-notarization-broker/pull/29) it also
+declares a `provisioning_profile`. `com.apple.developer.system-extension.install`
+is a *restricted* entitlement: macOS honours it only if the app bundle contains
+`Contents/embedded.provisionprofile` granting it. Nothing about signing reveals
+a missing profile — codesign, notarization, stapling and Gatekeeper all pass,
+and the app dies at launch with `Launch failed` and, in the log,
+`AppleMobileFileIntegrityError -413`. Releases v0.1.0 and v0.1.1 shipped that
+way and cannot be started on any Mac.
+
+The profile lives in the broker's `macos-signing` environment as
+`OPENLENS_PROVISIONING_PROFILE` and must be a **Developer ID** profile from the
+Apple Developer portal. The Xcode "Mac Team Provisioning Profile" that a local
+build embeds is not usable: it names the Macs it was issued for, so it works on
+the machine that built the app and nowhere else. The broker rejects it.
+
 Any change to the app's identity, layout, architecture, entitlements, or minimum
 macOS version needs a reviewed pull request against the broker **before** the
 next release, or the preflight will reject the build.
@@ -57,6 +73,16 @@ Gatekeeper refuses to activate a camera system extension that is not notarized,
 so there is no "just ship the zip" shortcut. The app and the embedded extension
 are signed separately, and both must carry a Developer ID Application
 certificate.
+
+A notarized build is not necessarily a working one. Before publishing a release,
+download the artifact and actually start it — the local development build is
+signed differently and proves nothing about it:
+
+```bash
+ls OpenLens.app/Contents/embedded.provisionprofile   # must exist
+spctl -a -vvv -t exec OpenLens.app                   # must say "accepted"
+open OpenLens.app                                    # must actually open
+```
 
 ## Build and test
 
