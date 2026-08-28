@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
@@ -9,6 +8,8 @@ import path from "node:path";
 import process from "node:process";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+
+import { handshake, readFrame, writeFrame } from "./websocket.js";
 
 /**
  * Runs the plugin between a stand-in for OpenDeck and a stand-in for OpenLens.
@@ -23,8 +24,19 @@ import { fileURLToPath } from "node:url";
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const pluginPath = path.join(here, "..", "com.trsdn.openlens.sdPlugin", "plugin.js");
 const PLUGIN_UUID = "com.trsdn.openlens.sdPlugin";
+
+// Run a copy, in a directory of its own, because that is what a deck app runs:
+// install.sh copies the folder out of the repository, away from everything
+// around it. Running it in place would quietly borrow this package's
+// `type: module` from the parent directory and hide that the plugin needs its
+// own — which a deck app would then discover on someone else's machine.
+const installed = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), "openlens-installed-")),
+    PLUGIN_UUID,
+);
+fs.cpSync(path.join(here, "..", PLUGIN_UUID), installed, { recursive: true });
+const pluginPath = path.join(installed, "plugin.js");
 
 // MARK: - A stand-in for OpenLens
 
@@ -81,7 +93,6 @@ function pushState(patch) {
 // is all the Stream Deck protocol ever needs. Writing it out is what lets this
 // test exist at all without a dependency.
 
-const GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 /** Messages the plugin sent us, in order. */
 const fromPlugin = [];
@@ -118,15 +129,7 @@ function nextMessage(matches, description) {
 const deck = http.createServer();
 
 deck.on("upgrade", (request, socket) => {
-    const accept = crypto
-        .createHash("sha1")
-        .update(request.headers["sec-websocket-key"] + GUID)
-        .digest("base64");
-    socket.write(
-        "HTTP/1.1 101 Switching Protocols\r\n" +
-            "Upgrade: websocket\r\nConnection: Upgrade\r\n" +
-            `Sec-WebSocket-Accept: ${accept}\r\n\r\n`
-    );
+    handshake(request, socket);
     pluginSocket = socket;
 
     let buffer = Buffer.alloc(0);
@@ -135,53 +138,14 @@ deck.on("upgrade", (request, socket) => {
         let frame;
         while ((frame = readFrame(buffer))) {
             buffer = buffer.subarray(frame.length);
-            if (frame.payload !== null) deliver(JSON.parse(frame.payload));
+            // A close or a ping is not something this test has an opinion about.
+            if (frame.opcode === 0x1) deliver(JSON.parse(frame.payload.toString("utf8")));
         }
     });
 });
 
-/** Reads one client frame, or null when there is not a whole one yet. */
-function readFrame(buffer) {
-    if (buffer.length < 2) return null;
-    const opcode = buffer[0] & 0x0f;
-    const masked = (buffer[1] & 0x80) !== 0;
-    let length = buffer[1] & 0x7f;
-    let offset = 2;
-
-    if (length === 126) {
-        if (buffer.length < 4) return null;
-        length = buffer.readUInt16BE(2);
-        offset = 4;
-    } else if (length === 127) {
-        if (buffer.length < 10) return null;
-        length = Number(buffer.readBigUInt64BE(2));
-        offset = 10;
-    }
-
-    const mask = masked ? buffer.subarray(offset, offset + 4) : null;
-    if (masked) offset += 4;
-    if (buffer.length < offset + length) return null;
-
-    const payload = Buffer.from(buffer.subarray(offset, offset + length));
-    if (mask) for (let i = 0; i < payload.length; i += 1) payload[i] ^= mask[i % 4];
-
-    // Text frames carry the protocol; a close or a ping is not something this
-    // test has an opinion about.
-    return { length: offset + length, payload: opcode === 0x1 ? payload.toString("utf8") : null };
-}
-
 function toPlugin(message) {
-    const payload = Buffer.from(JSON.stringify(message), "utf8");
-    let header;
-    if (payload.length < 126) {
-        header = Buffer.from([0x81, payload.length]);
-    } else {
-        header = Buffer.alloc(4);
-        header[0] = 0x81;
-        header[1] = 126;
-        header.writeUInt16BE(payload.length, 2);
-    }
-    pluginSocket.write(Buffer.concat([header, payload]));
+    pluginSocket.write(writeFrame(JSON.stringify(message)));
 }
 
 // MARK: - Checks
@@ -367,6 +331,13 @@ await new Promise((resolve) => deck.listen(0, "127.0.0.1", resolve));
 const plugin = spawn(
     process.execPath,
     [
+        // Stream Deck runs plugins with a Node 20 it bundles, and that one has
+        // neither a global WebSocket nor module detection for a `.js` file.
+        // Both are easy to depend on by accident here, where node is newer, and
+        // the failure would only show up on someone else's Stream Deck. So the
+        // whole suite runs as the older runtime would see it.
+        "--no-experimental-websocket",
+        "--no-experimental-detect-module",
         pluginPath,
         "-port", String(deck.address().port),
         "-pluginUUID", PLUGIN_UUID,

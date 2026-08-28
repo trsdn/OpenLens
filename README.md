@@ -165,10 +165,11 @@ node Tools/openlens-mcp/src/index.js watch
 It has no dependencies. See its [README](Tools/openlens-mcp/README.md) for the
 MCP client configuration and the full command list.
 
-[`Tools/openlens-opendeck`](Tools/openlens-opendeck) is an **OpenDeck plugin**, so
-a Stream Deck can switch scenes, pause the camera and drive key lights. Its keys
-follow the app rather than only driving it: a scene key lights up while its
-scene is live, even when the scene was changed with ⌥3.
+[`Tools/openlens-streamdeck`](Tools/openlens-streamdeck) is a **deck plugin** for
+OpenDeck and the Elgato Stream Deck, so hardware keys can switch scenes, pause
+the camera and drive key lights. Its keys follow the app rather than only
+driving it: a scene key lights up while its scene is live, even when the scene
+was changed with ⌥3.
 
 ## Performance
 

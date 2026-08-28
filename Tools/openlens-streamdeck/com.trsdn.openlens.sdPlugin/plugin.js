@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
 
+import { DeckSocket } from "./deck-socket.js";
 import { send, watch, NotRunningError } from "./vendor/client.js";
 
 /**
@@ -15,8 +16,11 @@ import { send, watch, NotRunningError } from "./vendor/client.js";
  * from the app window, and a key that only knew what it last sent would sit
  * there lying about it.
  *
- * OpenDeck runs this with the system `node` (v20+), so there is nothing to
- * install and nothing to build.
+ * The same file runs on OpenDeck and on an Elgato Stream Deck. OpenDeck runs it
+ * with the system `node`, Stream Deck with the one it bundles; both speak the
+ * same protocol, so the only thing that differs is the manifest beside it.
+ * There are no dependencies, so there is nothing to install and nothing to
+ * build.
  */
 
 const args = process.argv.slice(2);
@@ -37,7 +41,7 @@ let deck;
 // MARK: - OpenDeck
 
 function connectToDeck() {
-    deck = new WebSocket(`ws://127.0.0.1:${port}`);
+    deck = new DeckSocket(`ws://127.0.0.1:${port}`);
 
     deck.addEventListener("open", () => {
         deck.send(JSON.stringify({ event: registerEvent, uuid: pluginUUID }));
@@ -60,7 +64,7 @@ function connectToDeck() {
 }
 
 function toDeck(event, context, payload) {
-    if (deck?.readyState !== WebSocket.OPEN) return;
+    if (deck?.readyState !== DeckSocket.OPEN) return;
     deck.send(JSON.stringify(payload ? { event, context, payload } : { event, context }));
 }
 
@@ -110,7 +114,7 @@ function handle(message) {
 }
 
 function log(message) {
-    if (deck?.readyState === WebSocket.OPEN) {
+    if (deck?.readyState === DeckSocket.OPEN) {
         deck.send(JSON.stringify({ event: "logMessage", payload: { message: `OpenLens: ${message}` } }));
     }
 }
