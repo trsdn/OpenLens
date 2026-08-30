@@ -213,6 +213,26 @@ check("watching delivers the state now and again when it changes", async () => {
   assert.deepEqual(seen[1], { paused: true });
 });
 
+check("watching an unavailable socket retries once per second", async () => {
+  const missingSocketPath = path.join(path.dirname(socketPath), "missing.sock");
+  const createConnection = net.createConnection;
+  let attempts = 0;
+  net.createConnection = (...args) => {
+    attempts += 1;
+    return createConnection(...args);
+  };
+
+  try {
+    const stop = watch(() => {}, { socketPath: missingSocketPath });
+    await new Promise((resolve) => setTimeout(resolve, 2_200));
+    stop();
+  } finally {
+    net.createConnection = createConnection;
+  }
+
+  assert.ok(attempts <= 3, `expected no more than one attempt per second, got ${attempts}`);
+});
+
 check("the app not running is a readable message, not a stack trace", async (server) => {
   await new Promise((resolve) => app.close(resolve));
   const { result } = await server.request("tools/call", {

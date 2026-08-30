@@ -137,9 +137,11 @@ export function watch(onState, { socketPath = defaultSocketPath(), onError = () 
     });
 
     const reconnect = (error) => {
-      if (stopped) return;
-      socket?.destroy();
+      if (stopped || socket === null) return;
+      const failedSocket = socket;
       socket = null;
+      failedSocket.removeAllListeners();
+      failedSocket.destroy();
       // Only once per outage, and only if there was something to lose: a
       // watcher started before the app is up should not be told it just went
       // away every second.
