@@ -632,4 +632,73 @@ final class VideoRendererTests: XCTestCase {
         let y = CVPixelBufferGetHeight(buffer) / 2
         return Int(base.advanced(by: y * stride + x).assumingMemoryBound(to: UInt8.self)[0])
     }
+
+    // MARK: - Colour tagging
+
+    /// Attachments whose presence costs every consumer a profile rebuild per frame.
+    ///
+    /// CoreMedia serialises a buffer's colour attachments alongside the sample,
+    /// and the receiving side turns them back into a `CGColorSpace` inside
+    /// `CMIOExtensionSample.init(xpcDictionary:)` — `CGColorSpaceCreateWithICCData`,
+    /// which rebuilds a tone-reproduction-curve LUT from scratch every single
+    /// time. Nothing downstream can opt out of that, so the only defence is not
+    /// to send them.
+    private static let profileRebuildingKeys: [String] = [
+        kCVImageBufferICCProfileKey as String,
+        kCVImageBufferCGColorSpaceKey as String,
+        kCVImageBufferColorPrimariesKey as String,
+        kCVImageBufferTransferFunctionKey as String,
+        kCVImageBufferGammaLevelKey as String
+    ]
+
+    /// The matrix is the one tag a consumer genuinely needs: without it the two
+    /// planes decode wrong and it is immediately visible. Primaries and transfer
+    /// function are display characteristics every conferencing app assumes to be
+    /// 709/sRGB anyway, and tagging them is what makes CoreMedia synthesise the
+    /// profile in the first place.
+    private func assertOnlyTheMatrixIsTagged(
+        _ buffer: CVPixelBuffer,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let attachments = CVBufferCopyAttachments(buffer, .shouldPropagate) as? [String: Any]
+        let tagged = try XCTUnwrap(attachments, file: file, line: line)
+
+        let matrix = try XCTUnwrap(
+            tagged[kCVImageBufferYCbCrMatrixKey as String] as? String,
+            "the matrix has to be signalled or the planes decode wrong",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            matrix,
+            kCVImageBufferYCbCrMatrix_ITU_R_601_4 as String,
+            file: file,
+            line: line
+        )
+        for key in Self.profileRebuildingKeys {
+            XCTAssertNil(
+                tagged[key],
+                "\(key) makes every consumer rebuild a colour profile per frame",
+                file: file,
+                line: line
+            )
+        }
+    }
+
+    func testRenderedOutputTagsOnlyTheMatrix() throws {
+        let output = try render(
+            VideoRenderer.Frame(
+                pixelBuffer: try makeSourceBuffer(),
+                crop: CGRect(x: 0, y: 0, width: 1, height: 1),
+                mirror: false,
+                overlay: nil
+            )
+        )
+        try assertOnlyTheMatrixIsTagged(output)
+    }
+
+    func testBlackOutputTagsOnlyTheMatrix() throws {
+        try assertOnlyTheMatrixIsTagged(try XCTUnwrap(VideoRenderer.makeBlackOutputBuffer()))
+    }
 }
