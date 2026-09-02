@@ -128,6 +128,21 @@ xcodebuild test -project OpenLens.xcodeproj -scheme OpenLens -destination 'platf
 The Xcode project is generated from `project.yml` by `xcodegen`; regenerate it
 after adding or removing files.
 
+## Frames we publish tag only the YCbCr matrix
+
+Colour attachments travel with a sample, and the receiving side rebuilds a
+`CGColorSpace` from them — `CGColorSpaceCreateWithICCData`, profile validation
+plus a fresh gamma LUT — inside `CMIOExtensionSample.init(xpcDictionary:)`, once
+per frame. On the inbound leg from a physical camera that was 45 % of the work on
+the receiving queue, and it is Apple's code on both ends, so there is nothing to
+hook. The outbound leg is ours: `VideoRenderer` sets `kCVImageBufferYCbCrMatrixKey`
+and nothing else, because a consumer needs the matrix to decode the two planes
+while primaries and transfer function only make CoreMedia synthesise a profile
+for it to rebuild thirty times a second.
+
+Adding a colour tag "for correctness" therefore costs someone else's CPU and
+nothing here would notice. `VideoRendererTests` pins both buffers we send.
+
 ## The scene format is hand-written
 
 `CameraScene` has a `CodingKeys` list, a spelled-out initialiser and two private

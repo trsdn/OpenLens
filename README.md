@@ -192,7 +192,7 @@ which takes `UVCAssistant` from around 28 % to **0.0 %** — that process is not
 counted in the table above, but it is the single largest consumer while a
 camera is open.
 
-Three findings worth recording, because all three were counter-intuitive:
+Four findings worth recording, because all four were counter-intuitive:
 
 - The extension used to burn **a third of a core doing nothing**.
   `CMIOExtensionStream.consumeSampleBuffer(from:)` does *not* block on an empty
@@ -215,8 +215,32 @@ Three findings worth recording, because all three were counter-intuitive:
   consumer actually starts the camera and is released five seconds after it
   stops; the delay is what keeps a camera switch mid-call from paying for a fresh
   stream start. Idle extension cost is now **0.0 %**.
+- **Colour tags are not free metadata, and the one that hurts is not ours to
+  drop.** Under `sample`, 25 of 56 stacks on the receiving
+  `CMIOExtensionProviderHostContext` queue sat inside
+  `CGColorSpaceCreateWithICCData` — roughly **45 % of the work on that queue**
+  spent validating a profile and building a tone-reproduction-curve LUT from
+  scratch, once per frame, for a colour space that never changes. CoreMedia
+  serialises a buffer's colour attachments with every sample and faithfully
+  reconstructs a `CGColorSpace` from them in
+  `CMIOExtensionSample.init(xpcDictionary:)` rather than caching by profile
+  identity. On the **inbound** leg that is Apple's code on both ends: the sender
+  is the camera's own extension (a Cam Link 4K hosted by `UVCAssistant`), the
+  rebuild finishes before `captureOutput(_:didOutput:from:)` ever sees a buffer,
+  and `AVCaptureVideoDataOutput.videoSettings` chooses pixel format and size but
+  cannot decline an attachment. There is no hook — **not addressable from our
+  side.** The **outbound** leg is ours, and it is the same cost inflicted on
+  whatever conferencing app is watching, so the frames we publish tag only
+  `kCVImageBufferYCbCrMatrixKey`: a consumer needs the matrix to decode the two
+  planes and getting it wrong is visible, while primaries and transfer function
+  are display characteristics every consumer assumes to be 709/sRGB anyway — and
+  tagging them is exactly what makes CoreMedia synthesise the profile that the
+  consumer then rebuilds thirty times a second. `VideoRendererTests` pins that on
+  both buffers we send, the rendered frame and the black pause frame, because
+  adding a well-meant tag back is a one-line regression that costs someone else's
+  CPU and nothing here would notice.
 
-The lesson both times: measure the states, don't trust the theory. `ps %cpu` is a
+The lesson every time: measure the states, don't trust the theory. `ps %cpu` is a
 lifetime average and will hide all of this — diff `ps -o time=` over a fixed window
 instead.
 
